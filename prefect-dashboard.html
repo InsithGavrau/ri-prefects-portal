@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Prefect dashboard for profile, duty, and attendance summaries.">
+  <link rel="stylesheet" href="css/styles.css">
+  <title>Prefect Dashboard | RI Prefect Portal</title>
+</head>
+<body data-page="prefect-dashboard" data-role="prefect">
+  <div id="app">
+    <main class="route-fallback" aria-busy="true">
+      <section class="card fallback-card">
+        <p class="eyebrow">Prefect portal</p>
+        <h1>Prefect Dashboard</h1>
+        <p>Loading your profile, duty selections, attendance summary, and daily motivation.</p>
+        <div class="fallback-features"><span>Profile overview</span><span>Selected duties</span><span>Recent attendance</span><span>Motivation</span></div>
+        <div class="fallback-status"><i></i>Connecting securely to Supabase...</div>
+      </section>
+    </main>
+  </div>
+  <noscript><p class="noscript-note">JavaScript is required to load protected prefect data.</p></noscript>
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>

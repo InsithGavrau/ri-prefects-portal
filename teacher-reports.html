@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Filter and export school duty attendance reports.">
+  <link rel="stylesheet" href="css/styles.css">
+  <title>Attendance Reports | RI Prefect Portal</title>
+</head>
+<body data-page="teacher-reports" data-role="teacher">
+  <div id="app">
+    <main class="route-fallback" aria-busy="true"><section class="card fallback-card">
+      <p class="eyebrow">Teacher portal</p><h1>Attendance Reports</h1>
+      <p>Loading date, prefect, class, duty, status, location, and coordinator filters with summary percentages and CSV export.</p>
+      <div class="fallback-features"><span>Advanced filters</span><span>Attendance percentages</span><span>Detailed records</span><span>CSV export</span></div>
+      <div class="fallback-status"><i></i>Preparing report data...</div>
+    </section></main>
+  </div>
+  <noscript><p class="noscript-note">JavaScript is required to filter and export reports.</p></noscript>
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>

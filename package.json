@@ -1,0 +1,1 @@
+{"name":"ri-prefect-portal","private":true,"version":"1.0.0","type":"module","scripts":{"dev":"vite --host 127.0.0.1","build":"vite build","test:schema":"node tests/validate-schema.mjs","preview":"vite preview --host 127.0.0.1"},"dependencies":{"@supabase/supabase-js":"^2.50.0"},"devDependencies":{"@electric-sql/pglite":"^0.3.8","vite":"^7.0.0"},"overrides":{"esbuild":"^0.28.1"}}

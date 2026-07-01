@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Create a pending prefect account for the Royal Institute Prefects Portal.">
+  <link rel="stylesheet" href="css/styles.css">
+  <title>Signup | RI Prefect Portal</title>
+</head>
+<body data-page="signup">
+  <main class="auth-wrap">
+    <section class="card auth-card">
+      <img class="auth-logo" src="assets/rilogo.png" alt="Royal Institute logo">
+      <h1>Create Prefect Account</h1>
+      <p class="lede">The light of Learning</p>
+      <div data-setup></div>
+      <div id="signup-status"></div>
+      <form id="signup-form" class="form-grid">
+        <div class="field"><label for="first_name">First name</label><input id="first_name" name="first_name" required maxlength="80"></div>
+        <div class="field"><label for="email">Email</label><input id="email" name="email" type="email" autocomplete="email" required></div>
+        <div class="field"><label for="phone">Telephone number</label><input id="phone" name="phone" type="tel" autocomplete="tel" required maxlength="30"></div>
+        <div class="field"><label for="current_class">Current class</label><input id="current_class" name="current_class" required maxlength="40"></div>
+        <div class="field"><label for="password">Password</label><input id="password" name="password" type="password" autocomplete="new-password" minlength="6" required></div>
+        <div class="field"><label for="confirm_password">Confirm password</label><input id="confirm_password" name="confirm_password" type="password" autocomplete="new-password" minlength="6" required></div>
+        <div class="field full"><button class="btn" type="submit">Create account</button></div>
+      </form>
+    </section>
+    <p class="auth-links">Already registered? <a href="login.html">Sign in</a></p>
+    <footer class="portal-footer auth-footer">System developed by Insith Liyana Arachchi | 2026 Headboard <span>|</span> <a href="mailto:insith6969@gmail.com">Technical Issues</a> <span>|</span> <a href="PASTE_INSITH_LINKEDIN_URL_HERE">LinkedIn</a></footer>
+  </main>
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>

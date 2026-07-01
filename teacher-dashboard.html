@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Teacher dashboard for live prefect attendance oversight.">
+  <link rel="stylesheet" href="css/styles.css">
+  <title>Teacher Dashboard | RI Prefect Portal</title>
+</head>
+<body data-page="teacher-dashboard" data-role="teacher">
+  <div id="app">
+    <main class="route-fallback" aria-busy="true"><section class="card fallback-card">
+      <p class="eyebrow">Teacher portal</p><h1>Teacher Dashboard</h1>
+      <p>Loading prefect account totals, today's attendance, pending approvals, recent absences, and the top four missing-duty list.</p>
+      <div class="fallback-features"><span>9 live summary cards</span><span>Top 4 absences</span><span>Pending approvals</span><span>Recent sessions</span></div>
+      <div class="fallback-status"><i></i>Calculating live school attendance...</div>
+    </section></main>
+  </div>
+  <noscript><p class="noscript-note">JavaScript is required to calculate dashboard statistics.</p></noscript>
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>
