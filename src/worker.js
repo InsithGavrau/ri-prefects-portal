@@ -15,7 +15,7 @@ export default {
       headers.set("Cache-Control", "no-store, no-cache, max-age=0, must-revalidate");
       headers.set("Pragma", "no-cache");
       headers.set("Expires", "0");
-      headers.set("X-Portal-Version", "portal-polish-guide-20261010");
+      headers.set("X-Portal-Version", "portal-wordmark-20261010");
       headers.delete("Content-Length");
 
       return new Response(html, {

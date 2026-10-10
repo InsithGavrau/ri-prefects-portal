@@ -66,20 +66,19 @@ export function mountHallOfFameWebGL(root) {
   let disposed = false;
 
   const resize = () => {
-    const mobile = window.matchMedia("(max-width: 640px)").matches;
     const width = Math.max(1, root.clientWidth);
-    const height = mobile ? 230 : Math.max(1, root.clientHeight);
+    const height = Math.max(1, root.clientHeight);
     const aspect = width / height;
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.75));
     renderer.setSize(width, height, false);
     camera.aspect = aspect;
-    camera.position.z = mobile ? 6.5 : aspect < 0.92 ? 8.4 : 7.2;
+    camera.position.z = aspect < 0.92 ? 8.4 : 7.2;
     camera.updateProjectionMatrix();
 
     const compact = aspect < 1.05;
-    const scale = mobile ? 1.05 : compact ? 0.76 : aspect < 1.45 ? 0.9 : 1;
+    const scale = compact ? 0.76 : aspect < 1.45 ? 0.9 : 1;
     crown.scale.setScalar(scale);
-    crown.position.set(mobile ? 0 : compact ? 0.78 : 1.65, mobile ? 0.05 : compact ? -0.26 : 0.02, 0);
+    crown.position.set(compact ? 0.78 : 1.65, compact ? -0.26 : 0.02, 0);
     crown.userData.baseY = crown.position.y;
     honorArc.scale.setScalar(scale);
     honorArc.position.copy(crown.position);

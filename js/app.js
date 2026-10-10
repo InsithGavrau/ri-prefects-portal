@@ -8,7 +8,6 @@ import { timetableFull } from "./timetable.js";
 import { announcementsFull, unreadAnnouncementAlertMarkup } from "./announcements.js";
 import { canPerformNormalPrefectDuties } from "./roles.js";
 import { initPortalAssistant } from "./portalAssistant.js";
-import { initMobileMenu } from "./navigation.js";
 import { ArrowRight, createIcons, Crown, Eye, EyeOff, LogIn, ShieldCheck, UserPlus } from "lucide";
 
 const page = document.body.dataset.page;
@@ -26,6 +25,7 @@ const removedLocationNames = [["Front", "Entrance"].join(" "), ["Back", "Entranc
 let currentUser = null;
 let profile = null;
 let attendanceRows = [];
+let mobileMenuKeyListenerBound = false;
 
 function setupNotice() {
   const el = $("[data-setup]");
@@ -48,7 +48,7 @@ function navIcon(label = "") {
 }
 function navMarkup(role) {
   return (roleNav[role] || []).map(([href, label]) => {
-    const active = location.pathname.split("/").pop().replace(/\.html$/, "") === href.replace(/\.html$/, "");
+    const active = location.pathname.endsWith(href);
     return `<a class="nav-link ${active ? "active" : ""}" ${active ? 'aria-current="page"' : ""} href="${href}"><span class="nav-icon">${navIcon(label)}</span><span>${escapeHtml(label)}</span></a>`;
   }).join("");
 }
@@ -102,6 +102,28 @@ function layout(content) {
   if (notice) {
     sessionStorage.removeItem("portal-notice");
     toast(notice, "error");
+  }
+}
+function initMobileMenu() {
+  const toggle = $("[data-mobile-menu-toggle]");
+  const close = $("[data-mobile-menu-close]");
+  const drawer = $("[data-mobile-nav-backdrop]");
+  const setOpen = (open) => {
+    document.body.classList.toggle("mobile-menu-open", open);
+    toggle?.setAttribute("aria-expanded", String(open));
+    toggle?.setAttribute("aria-label", open ? "Close menu" : "Open menu");
+  };
+  toggle?.addEventListener("click", () => setOpen(!document.body.classList.contains("mobile-menu-open")));
+  close?.addEventListener("click", () => setOpen(false));
+  drawer?.addEventListener("click", () => setOpen(false));
+  $$(".mobile-nav .nav-link").forEach(link => link.addEventListener("click", () => setOpen(false)));
+  if (!mobileMenuKeyListenerBound) {
+    document.addEventListener("keydown", event => {
+      if (event.key !== "Escape") return;
+      document.body.classList.remove("mobile-menu-open");
+      $("[data-mobile-menu-toggle]")?.setAttribute("aria-expanded", "false");
+    });
+    mobileMenuKeyListenerBound = true;
   }
 }
 function animateCounters() {
