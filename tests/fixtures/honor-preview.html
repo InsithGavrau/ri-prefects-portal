@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Wall of Honor UI Fixture</title>
+  <link rel="stylesheet" href="/css/styles.css">
+  <link rel="stylesheet" href="/css/portal-polish.css">
+</head>
+<body data-page="hall-of-fame">
+  <main class="main">
+    <section class="hof-hero" data-hof-webgl-root>
+      <div class="hof-hero-copy"><div class="hof-hero-brand"><span class="portal-wordmark"><img src="/assets/ri-prefects-wordmark-20261010.png" alt="RI Prefects Portal" width="2172" height="724"></span></div><p class="eyebrow">Royal Institute Prefects Guild</p><h2>Wall of Honor</h2><p>Celebrating leadership, service, discipline, and lasting contribution.</p><div class="hof-values" aria-label="Wall of Honor values"><span><i data-lucide="shield-check"></i>Leadership</span><span><i data-lucide="sparkles"></i>Service</span><span><i data-lucide="award"></i>Discipline</span></div><a class="hof-enter-link" href="#hof-archive"><span>Enter the archive</span><i data-lucide="eye"></i></a></div>
+      <div class="hof-hero-visual" aria-hidden="true"><div class="hof-crown-fallback"><i data-lucide="crown"></i></div><span>RI / Honor</span></div>
+    </section>
+    <section class="hof-showcase section-gap" id="hof-archive"><div class="hof-carousel-toolbar"><div><p class="eyebrow">Celebrated leadership</p><h2>The Honor Roll</h2><p>Approved leaders, lasting stories, and the standard future prefects can look up to.</p></div></div></section>
+  </main>
+  <script type="module">
+    import { createIcons, ShieldCheck, Sparkles, Award, Eye, Crown } from "lucide";
+    import { mountHallOfFameWebGL } from "/js/hallOfFameWebGL.js";
+    createIcons({ icons: { ShieldCheck, Sparkles, Award, Eye, Crown } });
+    mountHallOfFameWebGL(document.querySelector("[data-hof-webgl-root]"));
+  </script>
+</body>
+</html>
