@@ -3,7 +3,7 @@ begin;
 create extension if not exists pgcrypto;
 create schema if not exists private;
 revoke all on schema private from public, anon;
-grant usage on schema private to authenticated;
+grant usage on schema private to anon, authenticated;
 
 create table if not exists public.hall_of_fame_entries (
   id uuid primary key default gen_random_uuid(),
@@ -14,6 +14,8 @@ create table if not exists public.hall_of_fame_entries (
   contribution_years text,
   contribution_summary text,
   leadership_impact text,
+  profile_image_path text,
+  profile_image_url text,
   status text not null default 'pending',
   is_seeded boolean not null default false,
   submitted_at timestamptz default now(),
@@ -30,6 +32,8 @@ alter table if exists public.hall_of_fame_entries
   add column if not exists contribution_years text,
   add column if not exists contribution_summary text,
   add column if not exists leadership_impact text,
+  add column if not exists profile_image_path text,
+  add column if not exists profile_image_url text,
   add column if not exists status text not null default 'pending',
   add column if not exists is_seeded boolean not null default false,
   add column if not exists submitted_at timestamptz default now(),
@@ -84,7 +88,7 @@ returns text language sql stable security definer set search_path = '' as $$
   from public.profiles where id = (select auth.uid());
 $$;
 revoke all on function private.current_role() from public, anon;
-grant execute on function private.current_role() to authenticated;
+grant execute on function private.current_role() to anon, authenticated;
 
 create or replace function private.set_updated_at()
 returns trigger language plpgsql set search_path = '' as $$
@@ -129,6 +133,8 @@ begin
       or new.contribution_years is distinct from old.contribution_years
       or new.contribution_summary is distinct from old.contribution_summary
       or new.leadership_impact is distinct from old.leadership_impact
+      or new.profile_image_path is distinct from old.profile_image_path
+      or new.profile_image_url is distinct from old.profile_image_url
       or new.is_seeded is distinct from old.is_seeded
       or new.submitted_at is distinct from old.submitted_at
       or new.created_at is distinct from old.created_at then
@@ -194,7 +200,7 @@ drop policy if exists hall_of_fame_admin_delete on public.hall_of_fame_entries;
 create policy hall_of_fame_select
 on public.hall_of_fame_entries
 for select
-to authenticated
+to anon, authenticated
 using (
   status = 'approved'
   or submitted_by = (select auth.uid())
@@ -235,6 +241,7 @@ for delete
 to authenticated
 using (private.current_role() = 'admin');
 
+grant select on public.hall_of_fame_entries to anon;
 grant select, insert, update, delete on public.hall_of_fame_entries to authenticated;
 notify pgrst, 'reload schema';
 

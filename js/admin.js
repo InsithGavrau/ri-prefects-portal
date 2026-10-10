@@ -11,5 +11,5 @@ export const adminCapabilities = [
   "activate or deactivate accounts",
   "add and edit duty options",
   "review audit logs and roster data",
-  "manage Hall of Fame entries",
+  "manage Wall of Honor entries",
 ];

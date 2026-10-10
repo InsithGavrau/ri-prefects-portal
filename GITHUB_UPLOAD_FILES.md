@@ -14,6 +14,7 @@ Do upload:
 - `package.json`
 - `package-lock.json`
 - `vite.config.js`
+- `wrangler.jsonc`
 - `README.md`
 - `DEPLOYMENT.md`
 

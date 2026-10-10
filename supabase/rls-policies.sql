@@ -85,10 +85,61 @@ begin
 
   return new;
 end; $$;
+
+create or replace function private.validate_attendance_session_location()
+returns trigger language plpgsql set search_path = '' as $$
+declare
+  selected_duty_name text;
+  location_duty_type_id uuid;
+  location_duty_name text;
+begin
+  select trim(name) into selected_duty_name
+  from public.duty_types
+  where id = new.duty_type_id
+    and coalesce(is_active, active, true);
+
+  if selected_duty_name is null then
+    raise exception 'Selected attendance duty type is not active';
+  end if;
+
+  if selected_duty_name = 'Checkpoint Duty' then
+    new.duty_location_id := null;
+    return new;
+  end if;
+
+  if selected_duty_name not in ('Floor Duty','Canteen Duty') then
+    raise exception 'Selected attendance duty type is not supported';
+  end if;
+
+  if new.duty_location_id is null then
+    raise exception '% attendance requires an active location', selected_duty_name;
+  end if;
+
+  select location.duty_type_id, trim(location_type.name)
+  into location_duty_type_id, location_duty_name
+  from public.duty_locations location
+  join public.duty_types location_type on location_type.id = location.duty_type_id
+  where location.id = new.duty_location_id
+    and coalesce(location.is_active, location.active, true)
+    and coalesce(location_type.is_active, location_type.active, true);
+
+  if location_duty_type_id is null then
+    raise exception 'Selected attendance location is no longer active. Reload and choose it again.';
+  end if;
+
+  if location_duty_name is distinct from selected_duty_name then
+    raise exception 'Selected location is for %, not %. Reload the attendance list.', location_duty_name, selected_duty_name;
+  end if;
+
+  new.duty_type_id := location_duty_type_id;
+  return new;
+end; $$;
 drop trigger if exists validate_assignment_location on public.prefect_duty_assignments;
 create trigger validate_assignment_location before insert or update of duty_type_id,duty_location_id on public.prefect_duty_assignments for each row execute function private.validate_assignment_location();
+drop trigger if exists validate_assignment_location on public.attendance_sessions;
 drop trigger if exists validate_session_location on public.attendance_sessions;
-create trigger validate_session_location before insert or update of duty_type_id,duty_location_id on public.attendance_sessions for each row execute function private.validate_assignment_location();
+drop trigger if exists validate_attendance_session_location on public.attendance_sessions;
+create trigger validate_attendance_session_location before insert or update of duty_type_id,duty_location_id on public.attendance_sessions for each row execute function private.validate_attendance_session_location();
 
 alter table public.profiles enable row level security;
 alter table public.duty_types enable row level security;
@@ -126,11 +177,37 @@ using (private.current_role()='admin') with check (private.current_role()='admin
 create policy assignments_select on public.prefect_duty_assignments for select to authenticated
 using (prefect_profile_id=(select auth.uid()) or private.current_role() in ('coordinator','teacher','admin'));
 create policy assignments_insert_own on public.prefect_duty_assignments for insert to authenticated
-with check (prefect_profile_id=(select auth.uid()) and private.current_role()='prefect' and assignment_status='pending');
+with check (
+  prefect_profile_id=(select auth.uid())
+  and profile_id=(select auth.uid())
+  and private.current_role() in ('prefect','coordinator')
+  and assignment_status='pending'
+);
+create policy assignments_update_own_pending on public.prefect_duty_assignments for update to authenticated
+using (
+  prefect_profile_id=(select auth.uid())
+  and profile_id=(select auth.uid())
+  and private.current_role() in ('prefect','coordinator')
+  and assignment_status='pending'
+)
+with check (
+  prefect_profile_id=(select auth.uid())
+  and profile_id=(select auth.uid())
+  and private.current_role() in ('prefect','coordinator')
+  and assignment_status='pending'
+);
 create policy assignments_staff_update on public.prefect_duty_assignments for update to authenticated
 using (private.current_role() in ('teacher','admin')) with check (private.current_role() in ('teacher','admin'));
 create policy assignments_delete on public.prefect_duty_assignments for delete to authenticated
-using ((prefect_profile_id=(select auth.uid()) and assignment_status='pending') or private.current_role()='admin');
+using (
+  (
+    prefect_profile_id=(select auth.uid())
+    and profile_id=(select auth.uid())
+    and private.current_role() in ('prefect','coordinator')
+    and assignment_status='pending'
+  )
+  or private.current_role()='admin'
+);
 
 create policy sessions_select on public.attendance_sessions for select to authenticated
 using (
@@ -138,7 +215,13 @@ using (
   or private.has_own_attendance_record(id)
 );
 create policy sessions_insert on public.attendance_sessions for insert to authenticated
-with check (private.current_role() in ('coordinator','admin') and coordinator_profile_id=(select auth.uid()));
+with check (
+  private.current_role()='admin'
+  or (
+    private.current_role()='coordinator'
+    and coordinator_profile_id=(select auth.uid())
+  )
+);
 create policy sessions_teacher_update on public.attendance_sessions for update to authenticated
 using (private.current_role() in ('teacher','admin')) with check (private.current_role() in ('teacher','admin'));
 create policy sessions_cleanup_delete on public.attendance_sessions for delete to authenticated
@@ -158,14 +241,23 @@ create policy records_select on public.attendance_records for select to authenti
 using (prefect_profile_id=(select auth.uid()) or private.current_role() in ('coordinator','teacher','admin'));
 create policy records_insert on public.attendance_records for insert to authenticated
 with check (
-  private.current_role() in ('coordinator','admin')
-  and private.is_owned_recorded_session(attendance_session_id)
+  private.current_role()='admin'
+  or (
+    private.current_role()='coordinator'
+    and private.is_owned_recorded_session(coalesce(attendance_session_id, session_id))
+  )
 );
 create policy records_teacher_update on public.attendance_records for update to authenticated
 using (private.current_role() in ('teacher','admin')) with check (private.current_role() in ('teacher','admin'));
 create policy audit_admin_select on public.audit_logs for select to authenticated using (private.current_role()='admin');
 
 revoke all on all tables in schema public from anon;
+grant usage on schema public to anon, authenticated, service_role;
+grant usage on schema private to authenticated;
+grant select, insert, update, delete on all tables in schema public to authenticated;
+grant usage, select on all sequences in schema public to authenticated;
+alter default privileges in schema public grant select, insert, update, delete on tables to authenticated;
+alter default privileges in schema public grant usage, select on sequences to authenticated;
 grant select, update on public.profiles to authenticated;
 grant select on public.duty_types, public.duty_locations to authenticated;
 grant insert, update, delete on public.duty_types, public.duty_locations to authenticated;
@@ -179,5 +271,7 @@ do $$ begin
     grant usage, select on sequence public.audit_logs_id_seq to authenticated;
   end if;
 end $$;
+
+notify pgrst, 'reload schema';
 
 commit;

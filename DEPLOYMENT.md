@@ -97,6 +97,32 @@ https://ri-prefects-portal.pages.dev
 
 Put that URL into Supabase Auth settings as described above.
 
+## 4A. If You Accidentally Created a Worker Instead of Pages
+
+If the Cloudflare screen says "Connect your Worker to a Git repository", you created a Worker project. This repo now supports that too through `wrangler.jsonc`.
+
+Keep these settings:
+
+```text
+Build command: npm run build
+Root directory: /
+```
+
+Change these settings:
+
+```text
+Deploy command: npx wrangler deploy --assets ./dist
+Version command: npx wrangler versions upload --assets ./dist
+```
+
+The important file for this mode is:
+
+```text
+wrangler.jsonc
+```
+
+It tells Cloudflare Workers to serve the Vite `dist` folder as static assets.
+
 ## 5. Custom School Domain
 
 Optional but recommended:

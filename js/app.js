@@ -1,12 +1,18 @@
 import { supabase, requireClient } from "./supabase.js";
-import { $, $$, escapeHtml, toast, setBusy, formatDate, badge, initQuote, drawBackground } from "./ui.js";
+import { $, $$, escapeHtml, toast, setBusy, formatDate, badge, renderRoleBadge, initQuote, drawBackground, PORTAL_CREDIT_TEXT, TECH_ISSUES_MAILTO, LINKEDIN_URL } from "./ui.js";
 import { isConfigured } from "./config.js";
 import { pageTitles, roleHome, roleNav } from "./router.js";
 import { signInWithPassword, signOut, signUpPrefect } from "./auth.js";
 import { hallOfFameFull } from "./hallOfFame.js";
+import { timetableFull } from "./timetable.js";
+import { announcementsFull, unreadAnnouncementAlertMarkup } from "./announcements.js";
+import { canPerformNormalPrefectDuties } from "./roles.js";
+import { initPortalAssistant } from "./portalAssistant.js";
+import { ArrowRight, createIcons, Crown, Eye, EyeOff, LogIn, ShieldCheck, UserPlus } from "lucide";
 
 const page = document.body.dataset.page;
 const WEEKDAY_OPTIONS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Any"];
+const WEEKDAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 const DUTY_NAMES = ["Checkpoint Duty", "Floor Duty", "Canteen Duty"];
 const LOCATIONLESS_VALUE = "__no_location__";
 const SESSION_STATE_OPTIONS = [
@@ -19,6 +25,7 @@ const removedLocationNames = [["Front", "Entrance"].join(" "), ["Back", "Entranc
 let currentUser = null;
 let profile = null;
 let attendanceRows = [];
+let mobileMenuKeyListenerBound = false;
 
 function setupNotice() {
   const el = $("[data-setup]");
@@ -26,8 +33,24 @@ function setupNotice() {
     el.innerHTML = '<div class="setup-warning">Setup required: paste the project publishable/anon key into <strong>js/config.js</strong>.</div>';
   }
 }
+function navIcon(label = "") {
+  const key = label.toLowerCase();
+  if (key.includes("overview") || key.includes("dashboard") || key.includes("teacher view")) return '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 11l8-7 8 7v8a1 1 0 0 1-1 1h-5v-6h-4v6H5a1 1 0 0 1-1-1v-8z"/></svg>';
+  if (key.includes("profile")) return '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8z"/><path d="M4 21a8 8 0 0 1 16 0"/></svg>';
+  if (key.includes("duty") || key.includes("roster")) return '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 4h8l1 3h3v14H4V7h3l1-3z"/><path d="M8 13l2 2 5-5"/><path d="M8 18h8"/></svg>';
+  if (key.includes("attendance") || key.includes("sessions")) return '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 5h14v16H5V5z"/><path d="M8 3v4M16 3v4M8 12h8M8 16h5"/></svg>';
+  if (key.includes("timetable")) return '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v15H4V5z"/><path d="M4 10h16M9 5v15M15 5v15"/></svg>';
+  if (key.includes("announcements")) return '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 10v4h4l8 4V6l-8 4H4z"/><path d="M18 9a4 4 0 0 1 0 6"/></svg>';
+  if (key.includes("hall")) return '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l2.3 5 5.4.6-4 3.7 1.1 5.3L12 15l-4.8 2.6 1.1-5.3-4-3.7 5.4-.6L12 3z"/></svg>';
+  if (key.includes("reports")) return '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 20V4h14v16H5z"/><path d="M9 16V9M13 16v-5M17 16v-2"/></svg>';
+  if (key.includes("users") || key.includes("prefects")) return '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8z"/><path d="M2 21a7 7 0 0 1 14 0"/><path d="M17 9h4M19 7v4"/></svg>';
+  return '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 5h14v14H5V5z"/><path d="M8 9h8M8 13h8M8 17h5"/></svg>';
+}
 function navMarkup(role) {
-  return (roleNav[role] || []).map(([href, label]) => `<a class="nav-link ${location.pathname.endsWith(href) ? "active" : ""}" href="${href}">${label}</a>`).join("");
+  return (roleNav[role] || []).map(([href, label]) => {
+    const active = location.pathname.endsWith(href);
+    return `<a class="nav-link ${active ? "active" : ""}" ${active ? 'aria-current="page"' : ""} href="${href}"><span class="nav-icon">${navIcon(label)}</span><span>${escapeHtml(label)}</span></a>`;
+  }).join("");
 }
 function normalizeText(value) {
   const mojibakeDash = String.fromCharCode(0xe2, 0x20ac, 0x201d);
@@ -35,38 +58,72 @@ function normalizeText(value) {
   return value.replaceAll(mojibakeDash, " - ").replaceAll(mojibakeDot, " | ");
 }
 function footerMarkup(auth = false) {
-  return `<footer class="portal-footer ${auth ? "auth-footer" : ""}">System developed by Insith Liyana Arachchi | 2026 Headboard <span>|</span> <a href="mailto:insith6969@gmail.com">Technical Issues</a> <span>|</span> <a href="PASTE_INSITH_LINKEDIN_URL_HERE">LinkedIn</a></footer>`;
+  return `<footer class="portal-footer ${auth ? "auth-footer" : ""}">${PORTAL_CREDIT_TEXT} <span>|</span> <a href="${TECH_ISSUES_MAILTO}">Technical Issues</a> <span>|</span> <a href="${LINKEDIN_URL}" target="_blank" rel="noopener">LinkedIn</a></footer>`;
 }
-function brandMarkup(compact = false) {
-  return `<img class="crest" src="assets/rilogo.png" alt="Royal Institute logo"><div><strong>${compact ? "RI Prefects Portal" : "Royal Institute Prefects Portal"}</strong><span>The light of Learning</span></div>`;
+function brandMarkup() {
+  return '<span class="portal-wordmark"><img src="/assets/ri-prefects-wordmark-20261010.png" alt="RI Prefects Portal" width="2172" height="724" decoding="async"></span>';
 }
 function layout(content) {
   const [title, subtitle] = pageTitles[page] || ["Prefects Portal", ""];
+  const pageRoleMarkup = page === "hall-of-fame" ? "" : `<div class="page-role">${renderRoleBadge(profile.role)} ${badge(profile.account_status)}</div>`;
+  const pageHeadMarkup = page === "hall-of-fame" ? "" : `<header class="page-head"><div><h1>${title}</h1><p>${subtitle}</p>${pageRoleMarkup}</div><span>${new Intl.DateTimeFormat("en-LK", { dateStyle: "full" }).format(new Date())}</span></header>`;
   content = normalizeText(content);
   $("#app").innerHTML = `
-    <div class="top-strip">Royal Institute Prefects Portal | ${escapeHtml(profile.first_name)} | ${escapeHtml(profile.role)}</div>
-    <header class="brandbar">${brandMarkup()}</header>
+    <div class="top-strip"><span>Royal Institute Prefects Portal</span><span>${escapeHtml(profile.first_name)}</span>${renderRoleBadge(profile.role)}</div>
+    <header class="brandbar"><div class="brandbar-group">${brandMarkup()}</div><button class="mobile-menu-toggle no-print" type="button" data-mobile-menu-toggle aria-expanded="false" aria-controls="mobile-menu" aria-label="Open menu"><svg class="menu-icon menu-icon-open" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16" stroke="currentColor" stroke-linecap="round"/></svg><svg class="menu-icon menu-icon-close" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-linecap="round"/></svg></button></header>
     <div class="shell">
       <aside class="sidebar">
-        <div class="sidebar-brand">${brandMarkup(true)}</div>
+        <div class="sidebar-brand">${brandMarkup()}</div>
         <p class="nav-title">${escapeHtml(profile.role)} portal</p>
         ${navMarkup(profile.role)}
         <button class="btn ghost logout" data-logout>Sign out</button>
       </aside>
       <main class="main">
-        <header class="page-head"><div><h1>${title}</h1><p>${subtitle}</p></div><span>${new Intl.DateTimeFormat("en-LK", { dateStyle: "full" }).format(new Date())}</span></header>
+        ${pageHeadMarkup}
         ${content}
         ${footerMarkup()}
       </main>
     </div>
-    <nav class="mobile-nav" aria-label="Mobile navigation">${navMarkup(profile.role)}</nav>`;
+    <div class="mobile-nav-backdrop no-print" data-mobile-nav-backdrop></div>
+    <nav class="mobile-nav no-print" id="mobile-menu" aria-label="Mobile navigation">
+      <div class="mobile-nav-head">
+        <div>${brandMarkup()}</div>
+        <button class="mobile-menu-close" type="button" data-mobile-menu-close aria-label="Close menu">&times;</button>
+      </div>
+      <div class="mobile-nav-links">${navMarkup(profile.role)}</div>
+      <button class="btn ghost logout" data-logout>Sign out</button>
+    </nav>`;
   $$("[data-logout]").forEach(el => el.addEventListener("click", logout));
+  initMobileMenu();
   initQuote();
   animateCounters();
+  initPortalAssistant({ page, profile, currentUser });
   const notice = sessionStorage.getItem("portal-notice");
   if (notice) {
     sessionStorage.removeItem("portal-notice");
     toast(notice, "error");
+  }
+}
+function initMobileMenu() {
+  const toggle = $("[data-mobile-menu-toggle]");
+  const close = $("[data-mobile-menu-close]");
+  const drawer = $("[data-mobile-nav-backdrop]");
+  const setOpen = (open) => {
+    document.body.classList.toggle("mobile-menu-open", open);
+    toggle?.setAttribute("aria-expanded", String(open));
+    toggle?.setAttribute("aria-label", open ? "Close menu" : "Open menu");
+  };
+  toggle?.addEventListener("click", () => setOpen(!document.body.classList.contains("mobile-menu-open")));
+  close?.addEventListener("click", () => setOpen(false));
+  drawer?.addEventListener("click", () => setOpen(false));
+  $$(".mobile-nav .nav-link").forEach(link => link.addEventListener("click", () => setOpen(false)));
+  if (!mobileMenuKeyListenerBound) {
+    document.addEventListener("keydown", event => {
+      if (event.key !== "Escape") return;
+      document.body.classList.remove("mobile-menu-open");
+      $("[data-mobile-menu-toggle]")?.setAttribute("aria-expanded", "false");
+    });
+    mobileMenuKeyListenerBound = true;
   }
 }
 function animateCounters() {
@@ -123,7 +180,10 @@ async function guard() {
     return false;
   }
   const required = (document.body.dataset.role || "").split(",").map(value => value.trim()).filter(Boolean);
-  const allowed = required.includes(profile.role) || profile.role === "admin";
+  const normalDutyPage = ["prefect-duty-selection", "prefect-attendance-history"].includes(page);
+  const allowed = required.includes(profile.role)
+    || profile.role === "admin"
+    || (normalDutyPage && canPerformNormalPrefectDuties(profile.role));
   if (!allowed) {
     sessionStorage.setItem("portal-notice", `This page is for ${required.join(" or ")} accounts. You are signed in as ${profile.role} (${profile.account_status}). Ask an admin to promote/activate this account, or sign out and use a staff account.`);
     location.replace(roleHome[profile.role] || "login.html");
@@ -135,10 +195,15 @@ function errorMessage(err) {
   const message = err?.message || "Something went wrong.";
   if (err?.status === 429 || /rate limit/i.test(message)) return "Supabase's project email quota is temporarily exhausted. Do not keep retrying. For this prototype, disable Confirm email in Supabase Auth settings; for production, configure custom SMTP.";
   if (isMissingAssignmentScopeError(err)) return "Your Supabase database is missing the assignment_scope column. Run sql/update-floor-duty-permanent-assignments.sql in the Supabase SQL Editor, then run sql/make-coordinator-attendance-official.sql.";
-  if (err?.code === "PGRST205" || /schema cache|could not find the table/i.test(message)) return "The Supabase portal tables are not installed yet. Run schema.sql, rls-policies.sql, seed-duty-options.sql, then the new migration files in the project's SQL Editor.";
+  if (err?.code === "PGRST205" || /schema cache|could not find the table/i.test(message)) return "Supabase can see the project, but the Data API grants/schema cache need repair. Open sql/repair-live-supabase-api-grants.sql, copy the SQL inside it into the Supabase SQL Editor, run it, then reload this page. Do not paste the filename by itself.";
+  if (err?.code === "23502" && /duty_location_id/i.test(message) && /attendance_sessions/i.test(message)) return "The live attendance_sessions table still requires a location, but Checkpoint Duty correctly has none. Open the updated sql/fix-attendance-submit-rls.sql file, copy every SQL statement inside it into the Supabase SQL Editor, run it, then reload this page. Do not paste only the filename.";
   if (err?.code === "23505" || /duplicate key/i.test(message)) return "That record already exists. Review the existing session or assignment, or choose a different combination.";
   if (err?.code === "23503" || /foreign key/i.test(message)) return "A linked record is missing in Supabase. Re-run the schema and seed SQL, then reload this page.";
-  if (err?.code === "42501" || /row-level security|permission denied/i.test(message)) return "Supabase blocked this action with row-level security. Check that your account role is active and that the RLS policies have been installed.";
+  if (/Duty location does not belong to the selected active duty type/i.test(message)) return "Supabase is still using the legacy attendance-location trigger. Open sql/fix-attendance-submit-rls.sql, copy all SQL inside it into the Supabase SQL Editor, run it, then reload this page.";
+  if (err?.code === "42501" || /row-level security|permission denied/i.test(message)) {
+    if (page === "prefect-duty-selection") return "Supabase blocked this duty selection with Data API grants or RLS. Open sql/allow-coordinators-normal-duties.sql, copy all SQL inside it into the Supabase SQL Editor, run it, then reload. Do not paste only the filename.";
+    return "Supabase blocked this request with Data API grants or RLS. For attendance submit, run sql/fix-attendance-submit-rls.sql in the Supabase SQL Editor, then reload. Also make sure this account is active and has the right portal role.";
+  }
   return message;
 }
 function todayISO() {
@@ -151,6 +216,18 @@ function schoolDateISO() {
   if (day === 6) d.setDate(d.getDate() + 2);
   if (day === 0) d.setDate(d.getDate() + 1);
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+function localSchoolDay(dateValue) {
+  if (!dateValue) return { dayIndex: null, dayName: "", isWeekend: false, isValid: false };
+  const date = new Date(`${dateValue}T00:00:00`);
+  if (Number.isNaN(date.getTime())) return { dayIndex: null, dayName: "", isWeekend: false, isValid: false };
+  const dayIndex = date.getDay();
+  return {
+    dayIndex,
+    dayName: WEEKDAY_NAMES[dayIndex],
+    isWeekend: dayIndex === 0 || dayIndex === 6,
+    isValid: true,
+  };
 }
 function rowsOrEmpty(rows, columns, message = "No records found.") {
   return rows.length ? rows.join("") : `<tr><td class="empty" colspan="${columns}">${message}</td></tr>`;
@@ -197,6 +274,15 @@ function cleanDutyTypes(types, workflowOnly = true) {
 }
 function cleanLocations(locations) {
   return (locations || []).filter(location => !isRemovedLocation(location.name || location.location_name || "") && !isRemovedDutyType(location.duty_type?.name || ""));
+}
+function hydrateAssignments(assignments = [], dutyTypes = [], dutyLocations = []) {
+  const typeById = new Map(dutyTypes.map(type => [type.id, type]));
+  const locationById = new Map(dutyLocations.map(location => [location.id, location]));
+  return (assignments || []).map(assignment => ({
+    ...assignment,
+    duty_type: assignment.duty_type || typeById.get(assignment.duty_type_id) || null,
+    duty_location: assignment.duty_location || locationById.get(assignment.duty_location_id) || null,
+  }));
 }
 function formatLocationName(location) {
   if (!location) return "No specific location";
@@ -247,16 +333,134 @@ async function getDutyTypesForAdmin() {
   return cleanDutyTypes(data, false);
 }
 async function getAllActiveLocations() {
-  const { data, error } = await requireClient().from("duty_locations").select("*,duty_type:duty_types(id,name)").eq("is_active", true).order("sort_order").order("name");
+  const { data, error } = await requireClient().from("duty_locations").select("*").eq("is_active", true).order("sort_order").order("name");
   if (error) throw error;
   return cleanLocations(data);
+}
+async function resolveAttendanceSessionSelection({ dutyTypeId, dutyTypeName, dutyLocationId }) {
+  if (isCheckpointDuty(dutyTypeName)) {
+    return { duty_type_id: dutyTypeId, duty_location_id: null };
+  }
+  if (!dutyLocationId) throw new Error(`${dutyTypeName} attendance requires a location.`);
+
+  const { data: location, error: locationError } = await requireClient()
+    .from("duty_locations")
+    .select("id,duty_type_id,is_active")
+    .eq("id", dutyLocationId)
+    .maybeSingle();
+  if (locationError) throw locationError;
+  if (!location || !location.is_active) throw new Error("The selected duty location is no longer active. Reload and choose it again.");
+
+  const { data: locationType, error: typeError } = await requireClient()
+    .from("duty_types")
+    .select("id,name,is_active")
+    .eq("id", location.duty_type_id)
+    .maybeSingle();
+  if (typeError) throw typeError;
+  if (!locationType || !locationType.is_active) throw new Error("The selected location's duty type is no longer active. Reload and choose it again.");
+  if (String(locationType.name).trim() !== String(dutyTypeName).trim()) {
+    throw new Error(`The selected location is for ${locationType.name}, not ${dutyTypeName}. Reload the attendance list.`);
+  }
+
+  return { duty_type_id: locationType.id, duty_location_id: location.id };
+}
+
+function isAttendanceSchemaCompatibilityError(error, columns) {
+  const message = `${error?.message || ""} ${error?.details || ""} ${error?.hint || ""}`;
+  return columns.some(column => message.includes(column))
+    && /(does not exist|schema cache|could not find|null value|not-null|check constraint|violates)/i.test(message);
+}
+
+async function createAttendanceSessionRecord(payload) {
+  let result = await requireClient()
+    .from("attendance_sessions")
+    .insert({ ...payload, session_status: "submitted", review_status: "recorded" })
+    .select("id")
+    .single();
+
+  if (result.error && isAttendanceSchemaCompatibilityError(result.error, ["review_status", "session_status"])) {
+    result = await requireClient().from("attendance_sessions").insert(payload).select("id").single();
+  }
+  if (result.error) throw result.error;
+  return result.data;
+}
+
+async function insertAttendanceRecordRows(records, sessionId) {
+  const rows = records.map(record => ({ ...record, marked_by: profile.id }));
+  let result = await requireClient()
+    .from("attendance_records")
+    .insert(rows.map(record => ({ ...record, attendance_session_id: sessionId })));
+
+  if (!result.error) return;
+  if (!isAttendanceSchemaCompatibilityError(result.error, ["attendance_session_id", "session_id"])) throw result.error;
+
+  result = await requireClient()
+    .from("attendance_records")
+    .insert(rows.map(record => ({ ...record, attendance_session_id: sessionId, session_id: sessionId })));
+  if (!result.error) return;
+
+  if (isAttendanceSchemaCompatibilityError(result.error, ["attendance_session_id"])) {
+    result = await requireClient()
+      .from("attendance_records")
+      .insert(rows.map(record => ({ ...record, session_id: sessionId })));
+  }
+  if (result.error) throw result.error;
 }
 async function getDutyLocationsByDutyType(dutyTypeId, dutyTypes = null) {
   const type = dutyTypes?.find(item => item.id === dutyTypeId);
   if (type && isCheckpointDuty(type.name)) return [];
-  const { data, error } = await requireClient().from("duty_locations").select("*,duty_type:duty_types(id,name)").eq("duty_type_id", dutyTypeId).eq("is_active", true).order("sort_order").order("name");
+  const { data, error } = await requireClient().from("duty_locations").select("*").eq("duty_type_id", dutyTypeId).eq("is_active", true).order("sort_order").order("name");
   if (error) throw error;
   return cleanLocations(data);
+}
+async function loadAssignedPrefectsForAttendance({ dutyTypeId, dutyTypeName, dutyLocationId, attendanceDate, dutyDay = "", dutyTypes = null, dutyLocations = null }) {
+  const schoolDay = localSchoolDay(attendanceDate);
+  if (!schoolDay.isValid) throw new Error("Choose a valid attendance date.");
+  if (schoolDay.isWeekend) throw new Error("School duty attendance can only be marked from Monday to Friday.");
+  const selectedDutyDay = isFloorDuty(dutyTypeName) ? schoolDay.dayName : dutyDay;
+  if (!isFloorDuty(dutyTypeName) && !WEEKDAY_OPTIONS.includes(selectedDutyDay)) throw new Error("Choose the duty day for this attendance list.");
+
+  const typeList = dutyTypes || await getActiveDutyTypes();
+  const locationList = dutyLocations || await getAllActiveLocations();
+  const dutyType = typeList.find(type => type.id === dutyTypeId) || { id: dutyTypeId, name: dutyTypeName };
+  const location = dutyLocationId ? locationList.find(item => item.id === dutyLocationId) || null : null;
+
+  let query = requireClient().from("prefect_duty_assignments")
+    .select("id,prefect_profile_id,duty_type_id,duty_location_id,assigned_day,assignment_scope,assignment_status")
+    .eq("duty_type_id", dutyTypeId)
+    .in("assignment_status", ["active", "pending"]);
+
+  if (isFloorDuty(dutyTypeName)) {
+    if (!dutyLocationId) throw new Error("Choose a floor/class location.");
+    query = query.eq("duty_location_id", dutyLocationId).eq("assignment_scope", "permanent");
+  } else if (isCheckpointDuty(dutyTypeName)) {
+    query = query.is("duty_location_id", null).eq("assignment_scope", "weekday").in("assigned_day", [selectedDutyDay, "Any"]);
+  } else {
+    if (!dutyLocationId) throw new Error("Choose the Canteen location.");
+    query = query.eq("duty_location_id", dutyLocationId).eq("assignment_scope", "weekday").in("assigned_day", [selectedDutyDay, "Any"]);
+  }
+
+  const { data: assignments, error } = await query;
+  if (error) throw error;
+  const profileIds = [...new Set((assignments || []).map(assignment => assignment.prefect_profile_id).filter(Boolean))];
+  if (!profileIds.length) return { assignments: [], weekday: schoolDay.dayName };
+
+  const { data: prefects, error: profileError } = await requireClient()
+    .from("profiles")
+    .select("id,first_name,current_class,account_status,role")
+    .in("id", profileIds);
+  if (profileError) throw profileError;
+  const prefectById = new Map((prefects || []).map(prefect => [prefect.id, prefect]));
+
+  return {
+    weekday: selectedDutyDay,
+    assignments: normalizeAttendanceAssignments((assignments || []).map(assignment => ({
+      ...assignment,
+      prefect: prefectById.get(assignment.prefect_profile_id) || null,
+      duty_type: dutyType,
+      duty_location: assignment.duty_location_id ? locationList.find(item => item.id === assignment.duty_location_id) || location : null,
+    })), dutyTypeName, dutyLocationId, selectedDutyDay),
+  };
 }
 async function getActiveCoordinators() {
   const { data, error } = await requireClient().from("profiles").select("id,first_name").eq("role", "coordinator").eq("account_status", "active").order("first_name");
@@ -265,7 +469,7 @@ async function getActiveCoordinators() {
 }
 async function getSessionsWithFilters(filters = {}) {
   let query = requireClient().from("attendance_sessions")
-    .select("*,duty_type:duty_types(name),duty_location:duty_locations(name,group_name),coordinator:profiles!coordinator_profile_id(first_name),attendance_records(id,status,note,teacher_note,prefect:profiles!prefect_profile_id(first_name,current_class))")
+    .select("*,duty_type:duty_types(name),duty_location:duty_locations(name,group_name),coordinator:profiles!coordinator_profile_id(first_name),attendance_records!attendance_records_attendance_session_id_fkey(id,status,note,teacher_note,prefect:profiles!prefect_profile_id(first_name,current_class))")
     .order("attendance_date", { ascending: false })
     .limit(250);
   if (filters.from) query = query.gte("attendance_date", filters.from);
@@ -292,20 +496,87 @@ function locationFilterOptions(type, locations) {
   return `<option value="">All locations</option>${optionRows(locations)}`;
 }
 
+const AUTH_ICONS = { ArrowRight, Eye, EyeOff, LogIn, ShieldCheck, UserPlus };
+const HALL_LOADER_ICONS = { Crown };
+
+function renderAuthIcons() {
+  createIcons({ icons: AUTH_ICONS });
+}
+
+function initAuthUi() {
+  renderAuthIcons();
+  $$('[data-password-toggle]').forEach(button => {
+    const input = $(`#${button.dataset.passwordToggle}`);
+    if (!input) return;
+    button.addEventListener("click", () => {
+      const visible = input.type === "text";
+      input.type = visible ? "password" : "text";
+      const label = visible ? "Show password" : "Hide password";
+      button.setAttribute("aria-label", label);
+      button.title = label;
+      button.innerHTML = `<i data-lucide="${visible ? "eye" : "eye-off"}" aria-hidden="true"></i>`;
+      renderAuthIcons();
+      input.focus();
+    });
+  });
+
+  const password = $("#password");
+  const confirmPassword = $("#confirm_password");
+  const meter = $("[data-password-meter]");
+  const match = $("[data-password-match]");
+  if (password && meter) {
+    const updatePasswordState = () => {
+      const value = password.value;
+      const score = [
+        value.length >= 6,
+        value.length >= 10,
+        /[a-z]/.test(value) && /[A-Z]/.test(value),
+        /\d/.test(value),
+        /[^A-Za-z0-9]/.test(value),
+      ].filter(Boolean).length;
+      const state = !value ? "empty" : score <= 1 ? "weak" : score <= 3 ? "good" : "strong";
+      const labels = {
+        empty: "Use at least 6 characters.",
+        weak: "Add length, numbers, or symbols.",
+        good: "Good password.",
+        strong: "Strong password.",
+      };
+      meter.dataset.strength = state;
+      $("small", meter).textContent = labels[state];
+      if (match && confirmPassword) {
+        const matches = Boolean(confirmPassword.value) && confirmPassword.value === value;
+        match.dataset.matches = matches ? "true" : "false";
+        match.textContent = !confirmPassword.value ? "" : matches ? "Passwords match." : "Passwords do not match yet.";
+      }
+    };
+    password.addEventListener("input", updatePasswordState);
+    confirmPassword?.addEventListener("input", updatePasswordState);
+    updatePasswordState();
+  }
+}
+
 async function initLogin() {
   setupNotice();
   drawBackground();
+  initAuthUi();
+  const emailInput = $("#email");
+  const rememberEmail = $('[name="remember_email"]');
+  const rememberedEmail = localStorage.getItem("ri-login-email") || "";
+  if (rememberedEmail && emailInput && rememberEmail) {
+    emailInput.value = rememberedEmail;
+    rememberEmail.checked = true;
+  }
   const params = new URLSearchParams(location.search);
   if (params.get("inactive")) toast("This account is inactive or rejected. Ask a teacher or administrator for help.", "error");
   if (params.get("confirmed")) toast("Email confirmed. You can sign in now.");
-  if (params.get("setup")) toast("Authentication worked, but the database tables are not installed yet.", "error");
+  if (params.get("setup")) toast("Authentication worked, but Supabase blocked profile access. Confirm the configured project is correct and that the RLS/grant SQL files are installed.", "error");
   if (supabase) {
     const { data: { session } } = await supabase.auth.getSession();
     if (session) {
       try {
         const p = await getProfile(session.user.id);
         const notice = $("[data-setup]");
-        notice.innerHTML = `<div class="setup-warning success"><strong>Already signed in as ${escapeHtml(p.first_name)} (${escapeHtml(p.role)}).</strong><div class="actions"><a class="btn" href="${roleHome[p.role] || "prefect-dashboard.html"}">Continue to dashboard</a><button class="btn ghost" type="button" data-clear-session>Sign out / switch account</button></div></div>`;
+        notice.innerHTML = `<div class="setup-warning success"><strong>Already signed in as ${escapeHtml(p.first_name)} ${renderRoleBadge(p.role)}</strong><div class="actions"><a class="btn" href="${roleHome[p.role] || "prefect-dashboard.html"}">Continue to dashboard</a><button class="btn ghost" type="button" data-clear-session>Sign out / switch account</button></div></div>`;
         $("[data-clear-session]")?.addEventListener("click", async () => {
           await signOut();
           location.reload();
@@ -322,6 +593,8 @@ async function initLogin() {
     setBusy(btn, true, "Signing in...");
     try {
       const f = new FormData(e.currentTarget);
+      if (f.get("remember_email")) localStorage.setItem("ri-login-email", String(f.get("email") || "").trim());
+      else localStorage.removeItem("ri-login-email");
       const { data, error } = await signInWithPassword(f.get("email"), f.get("password"));
       if (error) throw error;
       const p = await getProfile(data.user.id);
@@ -334,10 +607,12 @@ async function initLogin() {
       setBusy(btn, false);
     }
   });
+  initPortalAssistant({ page, isAuthPage: true });
 }
 async function initSignup() {
   setupNotice();
   drawBackground();
+  initAuthUi();
   const form = $("#signup-form");
   const status = $("#signup-status");
   const button = $("button[type=submit]", form);
@@ -349,11 +624,11 @@ async function initSignup() {
     const remaining = Math.ceil((Number(localStorage.getItem(cooldownKey) || 0) + 60000 - Date.now()) / 1000);
     if (remaining > 0) {
       button.disabled = true;
-      button.textContent = `Try again in ${remaining}s`;
+      $("[data-button-label]", button).textContent = `Try again in ${remaining}s`;
       setTimeout(updateCooldown, 1000);
     } else if (button.disabled) {
       button.disabled = false;
-      button.textContent = "Create account";
+      $("[data-button-label]", button).textContent = "Create account";
     }
   };
   updateCooldown();
@@ -393,6 +668,7 @@ async function initSignup() {
       updateCooldown();
     }
   });
+  initPortalAssistant({ page, isAuthPage: true });
 }
 
 async function prefectProfile() {
@@ -402,7 +678,7 @@ async function prefectProfile() {
   ]);
   if (assignmentError || recordError) throw assignmentError || recordError;
   const attendanceRate = records.length ? Math.round(records.filter(row => row.status === "present").length / records.length * 100) : 0;
-  layout(`<div class="grid cards"><article class="card stat"><strong>${assignments.length}</strong><span>Duty selections</span></article><article class="card stat"><strong>${assignments.filter(row => row.assignment_status === "active").length}</strong><span>Active duties</span></article><article class="card stat"><strong>${records.length}</strong><span>Attendance records</span></article><article class="card stat"><strong>${attendanceRate}%</strong><span>Present rate</span></article></div><div class="grid two section-gap"><section class="card"><div class="section-heading"><div><p class="eyebrow">Personal record</p><h2>Profile details</h2></div>${badge(profile.account_status)}</div><form id="standalone-profile-form" class="form-grid"><div class="field"><label>First name</label><input value="${escapeHtml(profile.first_name)}" disabled><small>First names are managed with your identity record.</small></div><div class="field"><label>Email</label><input value="${escapeHtml(profile.email || currentUser.email)}" disabled></div><div class="field"><label>Telephone number</label><input name="phone" type="tel" value="${escapeHtml(profile.phone || "")}" required maxlength="30"></div><div class="field"><label>Current class</label><input name="current_class" value="${escapeHtml(profile.current_class || "")}" required maxlength="80"></div><div class="field"><label>Portal role</label><input value="${escapeHtml(profile.role)}" disabled></div><div class="field"><label>Account status</label><input value="${escapeHtml(profile.account_status)}" disabled></div><div class="field full"><button class="btn">Save profile changes</button></div></form>${profile.account_status === "pending" ? '<div class="setup-warning">Your prefect account is pending approval. You can prepare duty selections while a teacher or administrator reviews your account.</div>' : ""}</section><section class="card quote"><p class="eyebrow">Prefect Motivation</p><h2>Lead with purpose</h2><p data-quote></p><button class="btn secondary" data-new-quote>New Quote</button></section></div>`);
+  layout(`<div class="grid cards"><article class="card stat"><strong>${assignments.length}</strong><span>Duty selections</span></article><article class="card stat"><strong>${assignments.filter(row => row.assignment_status === "active").length}</strong><span>Active duties</span></article><article class="card stat"><strong>${records.length}</strong><span>Attendance records</span></article><article class="card stat"><strong>${attendanceRate}%</strong><span>Present rate</span></article></div><div class="grid two section-gap"><section class="card"><div class="section-heading"><div><p class="eyebrow">Personal record</p><h2>Profile details</h2></div><div class="badge-row">${renderRoleBadge(profile.role)} ${badge(profile.account_status)}</div></div><form id="standalone-profile-form" class="form-grid"><div class="field"><label>First name</label><input value="${escapeHtml(profile.first_name)}" disabled><small>First names are managed with your identity record.</small></div><div class="field"><label>Email</label><input value="${escapeHtml(profile.email || currentUser.email)}" disabled></div><div class="field"><label>Telephone number</label><input name="phone" type="tel" value="${escapeHtml(profile.phone || "")}" required maxlength="30"></div><div class="field"><label>Current class</label><input name="current_class" value="${escapeHtml(profile.current_class || "")}" required maxlength="80"></div><div class="field"><label>Portal role</label><input value="${escapeHtml(profile.role)}" disabled></div><div class="field"><label>Account status</label><input value="${escapeHtml(profile.account_status)}" disabled></div><div class="field full"><button class="btn">Save profile changes</button></div></form>${profile.account_status === "pending" ? '<div class="setup-warning">Your prefect account is pending approval. You can prepare duty selections while a teacher or administrator reviews your account.</div>' : ""}</section><section class="card quote"><p class="eyebrow">Prefect Motivation</p><h2>Lead with purpose</h2><p data-quote></p><button class="btn secondary" data-new-quote>New Quote</button></section></div>`);
   $("#standalone-profile-form").addEventListener("submit", async event => {
     event.preventDefault();
     const form = event.currentTarget;
@@ -425,12 +701,13 @@ async function prefectProfile() {
 async function prefectDashboardFull() {
   const [{ data: assignments, error: ae }, { data: records, error: re }] = await Promise.all([
     requireClient().from("prefect_duty_assignments").select("*,duty_type:duty_types(name),duty_location:duty_locations(name,group_name)").eq("prefect_profile_id", profile.id).order("created_at", { ascending: false }),
-    requireClient().from("attendance_records").select("status,attendance_session:attendance_sessions(attendance_date,duty_type:duty_types(name),duty_location:duty_locations(name,group_name))").eq("prefect_profile_id", profile.id).order("created_at", { ascending: false }).limit(8),
+    requireClient().from("attendance_records").select("status,attendance_session:attendance_sessions!attendance_records_attendance_session_id_fkey(attendance_date,duty_type:duty_types(name),duty_location:duty_locations(name,group_name))").eq("prefect_profile_id", profile.id).order("created_at", { ascending: false }).limit(8),
   ]);
   if (ae || re) throw ae || re;
+  const announcementAlert = await unreadAnnouncementAlertMarkup(profile);
   const activeAssignments = assignments.filter(x => x.assignment_status === "active").length;
   const pendingNotice = profile.account_status !== "active" || !activeAssignments ? `<div class="setup-warning"><strong>Setup needed for full attendance flow.</strong> This prefect account is ${escapeHtml(profile.account_status)} and has ${activeAssignments} approved duty assignment${activeAssignments === 1 ? "" : "s"}. A teacher/admin must activate the account and approve at least one duty before coordinator attendance marking can include it as official roster data.</div>` : "";
-  layout(`${pendingNotice}<div class="grid cards"><article class="card stat"><strong>${assignments.length}</strong><span>Selected duties</span></article><article class="card stat"><strong>${activeAssignments}</strong><span>Active duties</span></article><article class="card stat"><strong>${records.filter(x => x.status === "present").length}</strong><span>Recent present</span></article><article class="card stat"><strong>${records.filter(x => x.status === "absent").length}</strong><span>Recent absent</span></article></div><div class="grid two" style="margin-top:18px"><section class="card"><h2>Your profile</h2><form id="profile-form" class="form-grid"><div class="field"><label>First name</label><input value="${escapeHtml(profile.first_name)}" disabled></div><div class="field"><label>Email</label><input value="${escapeHtml(profile.email || currentUser.email)}" disabled></div><div class="field"><label>Phone</label><input name="phone" value="${escapeHtml(profile.phone)}" required></div><div class="field"><label>Current class</label><input name="current_class" value="${escapeHtml(profile.current_class)}" required></div><div class="field full"><button class="btn">Update profile</button></div></form><p>${badge(profile.role)} ${badge(profile.account_status)}</p></section><section class="card quote"><p class="eyebrow">Prefect Motivation</p><h2>Lead with purpose</h2><p data-quote></p><button class="btn secondary" data-new-quote>New Quote</button></section></div><section class="card" style="margin-top:18px"><h2>Selected duties</h2><div class="table-wrap"><table><thead><tr><th>Duty</th><th>Location</th><th>Assignment Type</th><th>Status</th></tr></thead><tbody>${rowsOrEmpty(assignments.map(a => `<tr><td>${escapeHtml(a.duty_type?.name)}</td><td>${escapeHtml(formatLocationName(a.duty_location))}</td><td>${escapeHtml(formatAssignmentDay(a))}</td><td>${badge(a.assignment_status)}</td></tr>`), 4)}</tbody></table></div><div class="actions"><a class="btn" href="prefect-duty-selection.html">Manage duty selections</a><a class="btn ghost" href="prefect-attendance-history.html">View full attendance</a></div></section><section class="card" style="margin-top:18px"><h2>Recent attendance</h2><div class="table-wrap"><table><thead><tr><th>Date</th><th>Duty</th><th>Location</th><th>Status</th></tr></thead><tbody>${rowsOrEmpty(records.map(r => `<tr><td>${formatDate(r.attendance_session?.attendance_date)}</td><td>${escapeHtml(r.attendance_session?.duty_type?.name)}</td><td>${escapeHtml(formatLocationName(r.attendance_session?.duty_location))}</td><td>${badge(r.status)}</td></tr>`), 4)}</tbody></table></div></section>`);
+  layout(`${announcementAlert}${pendingNotice}<div class="grid cards"><article class="card stat"><strong>${assignments.length}</strong><span>Selected duties</span></article><article class="card stat"><strong>${activeAssignments}</strong><span>Active duties</span></article><article class="card stat"><strong>${records.filter(x => x.status === "present").length}</strong><span>Recent present</span></article><article class="card stat"><strong>${records.filter(x => x.status === "absent").length}</strong><span>Recent absent</span></article></div><div class="grid two" style="margin-top:18px"><section class="card"><h2>Your profile</h2><form id="profile-form" class="form-grid"><div class="field"><label>First name</label><input value="${escapeHtml(profile.first_name)}" disabled></div><div class="field"><label>Email</label><input value="${escapeHtml(profile.email || currentUser.email)}" disabled></div><div class="field"><label>Phone</label><input name="phone" value="${escapeHtml(profile.phone)}" required></div><div class="field"><label>Current class</label><input name="current_class" value="${escapeHtml(profile.current_class)}" required></div><div class="field full"><button class="btn">Update profile</button></div></form><p class="badge-row">${renderRoleBadge(profile.role)} ${badge(profile.account_status)}</p></section><section class="card quote"><p class="eyebrow">Prefect Motivation</p><h2>Lead with purpose</h2><p data-quote></p><button class="btn secondary" data-new-quote>New Quote</button></section></div><section class="card" style="margin-top:18px"><h2>Selected duties</h2><div class="table-wrap"><table><thead><tr><th>Duty</th><th>Location</th><th>Assignment Type</th><th>Status</th></tr></thead><tbody>${rowsOrEmpty(assignments.map(a => `<tr><td>${escapeHtml(a.duty_type?.name)}</td><td>${escapeHtml(formatLocationName(a.duty_location))}</td><td>${escapeHtml(formatAssignmentDay(a))}</td><td>${badge(a.assignment_status)}</td></tr>`), 4)}</tbody></table></div><div class="actions"><a class="btn" href="prefect-duty-selection.html">Manage duty selections</a><a class="btn ghost" href="prefect-attendance-history.html">View full attendance</a></div></section><section class="card" style="margin-top:18px"><h2>Recent attendance</h2><div class="table-wrap"><table><thead><tr><th>Date</th><th>Duty</th><th>Location</th><th>Status</th></tr></thead><tbody>${rowsOrEmpty(records.map(r => `<tr><td>${formatDate(r.attendance_session?.attendance_date)}</td><td>${escapeHtml(r.attendance_session?.duty_type?.name)}</td><td>${escapeHtml(formatLocationName(r.attendance_session?.duty_location))}</td><td>${badge(r.status)}</td></tr>`), 4)}</tbody></table></div></section>`);
   $("#profile-form").addEventListener("submit", async e => {
     e.preventDefault();
     const f = new FormData(e.currentTarget);
@@ -443,13 +720,14 @@ async function prefectDashboardFull() {
   });
 }
 async function dutySelection() {
+  if (!canPerformNormalPrefectDuties(profile.role)) throw new Error("This account cannot select normal prefect duties.");
   const [{ data: rawAssignments, error: ae }, types, locations] = await Promise.all([
-    requireClient().from("prefect_duty_assignments").select("*,duty_type:duty_types(name),duty_location:duty_locations(name,group_name)").eq("prefect_profile_id", profile.id).order("created_at", { ascending: false }),
+    requireClient().from("prefect_duty_assignments").select("*").eq("prefect_profile_id", profile.id).order("created_at", { ascending: false }),
     getActiveDutyTypes(),
     getAllActiveLocations(),
   ]);
   if (ae) throw ae;
-  const assignments = rawAssignments || [];
+  const assignments = hydrateAssignments(rawAssignments || [], types, locations);
   layout(`<section class="card"><h2>Select a duty</h2><p class="lede">Checkpoint has no location. Floor Duty is continuous until a teacher or admin changes it.</p><form id="duty-form" class="form-grid"><div class="field"><label>Duty type</label><select name="duty_type_id" required><option value="">Choose duty</option>${types.map(t => `<option value="${t.id}">${escapeHtml(t.name)}</option>`).join("")}</select></div><div class="field" data-location-field><label>Duty location</label><select name="duty_location_id" disabled><option value="">Choose duty first</option></select><small data-location-note></small></div><div class="field" data-day-field><label>Assigned day</label><select name="assigned_day" required><option value="">Choose day</option>${WEEKDAY_OPTIONS.map(d => `<option>${d}</option>`).join("")}</select><small>Required for Checkpoint and Canteen duties.</small></div><div class="field"><label>Optional note</label><textarea name="note" maxlength="500"></textarea></div><div class="field full"><div class="info-card" data-duty-helper>Select a duty type to see the matching rule.</div></div><div class="field full"><button class="btn">Save duty selection</button></div></form></section><section class="card" style="margin-top:18px"><h2>My Selected Duties</h2><div class="table-wrap"><table><thead><tr><th>Duty</th><th>Location</th><th>Assignment Type</th><th>Assigned day</th><th>Status</th><th></th></tr></thead><tbody id="assignment-list">${assignmentRows(assignments)}</tbody></table></div></section>`);
   const typeSelect = $("[name=duty_type_id]");
   const locSelect = $("[name=duty_location_id]");
@@ -560,55 +838,107 @@ function assignmentRows(rows) {
   return rowsOrEmpty(rows.map(a => `<tr><td>${escapeHtml(a.duty_type?.name)}</td><td>${escapeHtml(formatLocationName(a.duty_location))}</td><td>${escapeHtml(formatAssignmentType(a))}</td><td>${escapeHtml(formatAssignmentDay(a))}</td><td>${badge(a.assignment_status)}</td><td>${a.assignment_status === "pending" ? `<button class="btn danger" data-remove="${a.id}">Remove</button>` : ""}</td></tr>`), 6);
 }
 async function prefectHistory() {
-  const { data, error } = await requireClient().from("attendance_records").select("status,note,attendance_session:attendance_sessions(attendance_date,duty_type:duty_types(name),duty_location:duty_locations(name,group_name))").eq("prefect_profile_id", profile.id).order("created_at", { ascending: false });
+  if (!canPerformNormalPrefectDuties(profile.role)) throw new Error("This account does not have a personal prefect attendance history.");
+  const { data, error } = await requireClient().from("attendance_records").select("status,note,attendance_session:attendance_sessions!attendance_records_attendance_session_id_fkey(attendance_date,duty_type:duty_types(name),duty_location:duty_locations(name,group_name))").eq("prefect_profile_id", profile.id).order("created_at", { ascending: false });
   if (error) throw error;
   layout(`<section class="card"><h2>My attendance</h2><div class="table-wrap"><table><thead><tr><th>Date</th><th>Duty</th><th>Location</th><th>Status</th><th>Note</th></tr></thead><tbody>${rowsOrEmpty(data.map(r => `<tr><td>${formatDate(r.attendance_session?.attendance_date)}</td><td>${escapeHtml(r.attendance_session?.duty_type?.name)}</td><td>${escapeHtml(formatLocationName(r.attendance_session?.duty_location))}</td><td>${badge(r.status)}</td><td>${escapeHtml(r.note || "")}</td></tr>`), 5)}</tbody></table></div></section>`);
 }
 
 async function coordinatorDashboardFull() {
-  const [{ data: sessions, error: se }, { data: pending, error: pe }] = await Promise.all([
-    requireClient().from("attendance_sessions").select("*,duty_type:duty_types(name),duty_location:duty_locations(name,group_name),attendance_records(status)").eq("coordinator_profile_id", profile.id).order("created_at", { ascending: false }).limit(12),
-    requireClient().from("prefect_duty_assignments").select("id,duty_type:duty_types(name),duty_location:duty_locations(name,group_name)").eq("assignment_status", "pending"),
+  const [{ data: sessions, error: se }, { data: normalAssignments, error: ae }, { data: ownRecords, error: re }] = await Promise.all([
+    requireClient().from("attendance_sessions").select("*,duty_type:duty_types(name),duty_location:duty_locations(name,group_name),attendance_records!attendance_records_attendance_session_id_fkey(status)").eq("coordinator_profile_id", profile.id).order("created_at", { ascending: false }).limit(12),
+    requireClient().from("prefect_duty_assignments").select("id,assignment_status").eq("prefect_profile_id", profile.id),
+    requireClient().from("attendance_records").select("id,status").eq("prefect_profile_id", profile.id).limit(500),
   ]);
-  if (se || pe) throw se || pe;
+  if (se || ae || re) throw se || ae || re;
+  const announcementAlert = await unreadAnnouncementAlertMarkup(profile);
   const today = todayISO();
   const todaySessions = sessions.filter(s => s.attendance_date === today);
-  const pendingLocations = new Set(pending.map(a => `${a.duty_type?.name} / ${formatLocationName(a.duty_location)}`));
-  layout(`<div class="grid cards"><article class="card stat"><strong>${todaySessions.length}</strong><span>Sessions today</span></article><article class="card stat"><strong>${pendingLocations.size}</strong><span>Pending duty locations</span></article><article class="card stat"><strong>${sessions.length}</strong><span>Official sessions</span></article><article class="card stat"><strong>${todaySessions.flatMap(s => s.attendance_records || []).length}</strong><span>Records today</span></article></div><div class="grid two" style="margin-top:18px"><section class="card quote"><p class="eyebrow">Prefect Motivation</p><h2>Lead with purpose</h2><p data-quote></p><button class="btn secondary" data-new-quote>New Quote</button></section><section class="card"><h2>Today's workflow</h2><p>Load assigned prefects for a weekday duty and submit one final status for each person. Submitted statuses become official immediately.</p><a class="btn" href="coordinator-mark-attendance.html">Mark Attendance</a></section></div><section class="card" style="margin-top:18px"><h2>Recent sessions</h2><div class="table-wrap"><table><thead><tr><th>Date</th><th>Duty</th><th>Location</th><th>Records</th><th>State</th></tr></thead><tbody>${rowsOrEmpty(sessions.map(s => `<tr><td>${formatDate(s.attendance_date)}</td><td>${escapeHtml(s.duty_type?.name)}</td><td>${escapeHtml(formatLocationName(s.duty_location))}</td><td>${s.attendance_records?.length || 0}</td><td>${sessionBadge(s.review_status)}</td></tr>`), 5)}</tbody></table></div></section>`);
+  const activeNormalDuties = normalAssignments.filter(assignment => assignment.assignment_status === "active").length;
+  layout(`${announcementAlert}<div class="grid cards"><article class="card stat"><strong>${todaySessions.length}</strong><span>Sessions today</span></article><article class="card stat"><strong>${activeNormalDuties}</strong><span>Active normal duties</span></article><article class="card stat"><strong>${ownRecords.length}</strong><span>My attendance records</span></article><article class="card stat"><strong>${sessions.length}</strong><span>Official sessions</span></article></div><div class="grid two" style="margin-top:18px"><section class="card quote"><p class="eyebrow">Prefect Motivation</p><h2>Lead with purpose</h2><p data-quote></p><button class="btn secondary" data-new-quote>New Quote</button></section><section class="card"><h2>Coordinator and prefect duties</h2><p>Mark attendance for duties you coordinate, and manage any separate duties you perform as a prefect.</p><div class="actions"><a class="btn" href="coordinator-mark-attendance.html">Mark Attendance</a><a class="btn secondary" href="prefect-duty-selection.html">Duty Selection</a><a class="btn ghost" href="prefect-attendance-history.html">My Attendance</a></div></section></div><section class="card" style="margin-top:18px"><h2>Recent sessions</h2><div class="table-wrap"><table><thead><tr><th>Date</th><th>Duty</th><th>Location</th><th>Records</th><th>State</th></tr></thead><tbody>${rowsOrEmpty(sessions.map(s => `<tr><td>${formatDate(s.attendance_date)}</td><td>${escapeHtml(s.duty_type?.name)}</td><td>${escapeHtml(formatLocationName(s.duty_location))}</td><td>${s.attendance_records?.length || 0}</td><td>${sessionBadge(s.review_status)}</td></tr>`), 5)}</tbody></table></div></section>`);
 }
 async function markAttendance() {
   const [types, locations] = await Promise.all([getActiveDutyTypes(), getAllActiveLocations()]);
-  layout(`<section class="card quote"><p class="eyebrow">Prefect Motivation</p><h2>Lead with purpose</h2><p data-quote></p><button class="btn secondary" data-new-quote>New Quote</button></section><section class="card" style="margin-top:18px"><form id="load-form" class="form-grid"><div class="field"><label>Attendance date</label><input name="date" type="date" value="${schoolDateISO()}" required></div><div class="field"><label>Duty type</label><select name="duty_type_id" required><option value="">Choose duty</option>${types.map(t => `<option value="${t.id}">${escapeHtml(t.name)}</option>`).join("")}</select></div><div class="field"><label>Duty location</label><select name="duty_location_id" disabled><option value="">Choose duty first</option></select><small data-location-note></small></div><div class="field" style="justify-content:end"><button class="btn">Load Prefects</button></div></form></section><section id="attendance-area" class="card hidden" style="margin-top:18px"></section>`);
+  layout(`<section class="card quote"><p class="eyebrow">Prefect Motivation</p><h2>Lead with purpose</h2><p data-quote></p><button class="btn secondary" data-new-quote>New Quote</button></section><section class="card" style="margin-top:18px"><form id="load-form" class="form-grid"><div class="field"><label>Attendance date</label><input name="date" type="date" value="${schoolDateISO()}" required></div><div class="field"><label>Duty type</label><select name="duty_type_id" required><option value="">Choose duty</option>${types.map(t => `<option value="${t.id}">${escapeHtml(t.name)}</option>`).join("")}</select></div><div class="field hidden" data-duty-day-field><label>Duty day</label><select name="duty_day" disabled><option value="">Choose duty day</option>${WEEKDAY_OPTIONS.filter(day => day !== "Any").map(day => `<option>${day}</option>`).join("")}</select><small>Select the weekday roster to load for Checkpoint or Canteen Duty.</small></div><div class="field"><label>Duty location</label><select name="duty_location_id" disabled><option value="">Choose duty first</option></select><small data-location-note></small></div><div class="field full"><div class="info-card" data-duty-day></div></div><div class="field" style="justify-content:end"><button class="btn">Load Prefects</button></div></form></section><section id="attendance-area" class="card hidden" style="margin-top:18px"></section>`);
   const typeSelect = $("[name=duty_type_id]");
   const locationSelect = $("[name=duty_location_id]");
+  const dateInput = $("[name=date]");
+  const dayField = $("[data-duty-day-field]");
+  const daySelect = $("[name=duty_day]");
   const note = $("[data-location-note]");
-  typeSelect.addEventListener("change", () => {
+  const dutyDay = $("[data-duty-day]");
+  const updateDutyDay = () => {
+    const schoolDay = localSchoolDay(dateInput.value);
+    if (!schoolDay.isValid) {
+      dutyDay.textContent = "Choose a date to calculate the duty day.";
+      return;
+    }
+    const selected = types.find(type => type.id === typeSelect.value);
+    if (schoolDay.isWeekend) {
+      dutyDay.textContent = "School duty attendance can only be marked from Monday to Friday.";
+    } else if (selected && !isFloorDuty(selected.name)) {
+      dutyDay.textContent = daySelect.value
+        ? `Selected duty roster day: ${daySelect.value}`
+        : "Choose the duty roster day to load.";
+    } else {
+      dutyDay.textContent = `Attendance date weekday: ${schoolDay.dayName}`;
+    }
+  };
+  const updateLocationField = () => {
     const selected = types.find(type => type.id === typeSelect.value);
     const items = locations.filter(location => location.duty_type_id === typeSelect.value);
     locationSelect.value = "";
+    daySelect.value = "";
     if (!selected) {
       locationSelect.disabled = true;
       locationSelect.required = false;
       locationSelect.innerHTML = '<option value="">Choose duty first</option>';
+      dayField.classList.add("hidden");
+      daySelect.disabled = true;
+      daySelect.required = false;
       note.textContent = "";
     } else if (isCheckpointDuty(selected.name)) {
       locationSelect.disabled = true;
       locationSelect.required = false;
       locationSelect.innerHTML = '<option value="">No specific location</option>';
-      note.textContent = "Checkpoint Duty sessions are saved without a duty location.";
+      dayField.classList.remove("hidden");
+      daySelect.disabled = false;
+      daySelect.required = true;
+      note.textContent = "Checkpoint Duty saves without a duty location. Choose which weekday roster to load.";
+    } else if (isFloorDuty(selected.name)) {
+      locationSelect.disabled = false;
+      locationSelect.required = true;
+      locationSelect.innerHTML = `<option value="">Choose floor/class location</option>${optionRows(items)}`;
+      dayField.classList.add("hidden");
+      daySelect.disabled = true;
+      daySelect.required = false;
+      note.textContent = "Floor Duty loads permanent prefect assignments regardless of weekday.";
     } else {
       locationSelect.disabled = false;
       locationSelect.required = true;
-      locationSelect.innerHTML = `<option value="">Choose location</option>${optionRows(items)}`;
-      note.textContent = isFloorDuty(selected.name) ? "Floor Duty prefects load regardless of assigned day." : "";
+      locationSelect.innerHTML = `<option value="">Choose Canteen location</option>${optionRows(items)}`;
+      dayField.classList.remove("hidden");
+      daySelect.disabled = false;
+      daySelect.required = true;
+      note.textContent = "Canteen Duty loads prefects assigned to the selected weekday roster or Any.";
     }
-  });
+    updateDutyDay();
+  };
+  updateDutyDay();
+  dateInput.addEventListener("change", updateDutyDay);
+  daySelect.addEventListener("change", updateDutyDay);
+  typeSelect.addEventListener("change", updateLocationField);
   $("#load-form").addEventListener("submit", async e => {
     e.preventDefault();
     const f = new FormData(e.currentTarget);
     const date = String(f.get("date"));
-    const day = new Date(`${date}T00:00:00`).getDay();
-    if (day === 0 || day === 6) {
+    const schoolDay = localSchoolDay(date);
+    updateDutyDay();
+    if (!schoolDay.isValid) {
+      toast("Choose a valid attendance date.", "error");
+      return;
+    }
+    if (schoolDay.isWeekend) {
       toast("School duty attendance can only be marked from Monday to Friday.", "error");
       return;
     }
@@ -618,46 +948,76 @@ async function markAttendance() {
       return;
     }
     const locationId = requiresLocation(dutyType.name) ? String(f.get("duty_location_id") || "") : null;
+    const selectedDutyDay = isFloorDuty(dutyType.name) ? "" : String(f.get("duty_day") || "");
     if (requiresLocation(dutyType.name) && !locationId) {
       toast("Choose a duty location.", "error");
       return;
     }
-    const dayName = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"][day];
-    let query = requireClient().from("prefect_duty_assignments")
-      .select("id,assigned_day,prefect:profiles!prefect_profile_id(id,first_name,current_class),duty_type:duty_types(name),duty_location:duty_locations(name,group_name)")
-      .eq("duty_type_id", dutyType.id)
-      .in("assignment_status", ["pending", "active"]);
-    if (isFloorDuty(dutyType.name)) {
-      query = query.eq("duty_location_id", locationId);
-    } else if (isCheckpointDuty(dutyType.name)) {
-      query = query.is("duty_location_id", null).in("assigned_day", [dayName, "Any"]);
-    } else {
-      query = query.eq("duty_location_id", locationId).in("assigned_day", [dayName, "Any"]);
-    }
-    const { data, error } = await query;
-    if (error) {
-      toast(errorMessage(error), "error");
+    if (!isFloorDuty(dutyType.name) && !selectedDutyDay) {
+      toast("Choose the duty day to load.", "error");
       return;
     }
-    renderAttendance(data || [], {
-      date,
-      duty_type_id: dutyType.id,
-      duty_location_id: locationId,
-      duty_type: dutyType.name,
-      duty_location: locationId ? formatLocationName(locations.find(x => x.id === locationId)) : "No specific location",
-    });
+    const btn = $("button", e.currentTarget);
+    setBusy(btn, true, "Loading...");
+    try {
+      const resolvedSelection = await resolveAttendanceSessionSelection({
+        dutyTypeId: dutyType.id,
+        dutyTypeName: dutyType.name,
+        dutyLocationId: locationId,
+      });
+      const result = await loadAssignedPrefectsForAttendance({
+        dutyTypeId: resolvedSelection.duty_type_id,
+        dutyTypeName: dutyType.name,
+        dutyLocationId: resolvedSelection.duty_location_id,
+        attendanceDate: date,
+        dutyDay: selectedDutyDay,
+        dutyTypes: types,
+        dutyLocations: locations,
+      });
+      renderAttendance(result.assignments, {
+        date,
+        weekday: result.weekday,
+        duty_type_id: resolvedSelection.duty_type_id,
+        duty_location_id: resolvedSelection.duty_location_id,
+        duty_type: dutyType.name,
+        duty_location: locationId ? formatLocationName(locations.find(x => x.id === locationId)) : "No specific location",
+      });
+    } catch (err) {
+      toast(errorMessage(err), "error");
+    } finally {
+      setBusy(btn, false);
+    }
   });
+}
+function normalizeAttendanceAssignments(assignments, dutyTypeName, locationId, dayName) {
+  const seen = new Set();
+  return (assignments || [])
+    .filter(assignment => {
+      const prefect = assignment.prefect;
+      if (!prefect?.id || !canPerformNormalPrefectDuties(prefect.role) || prefect.account_status !== "active") return false;
+      if (!["active", "pending"].includes(assignment.assignment_status)) return false;
+      const scope = assignmentScope(assignment);
+      if (isFloorDuty(dutyTypeName)) return scope === "permanent" && assignment.duty_location_id === locationId;
+      if (isCheckpointDuty(dutyTypeName)) return scope === "weekday" && !assignment.duty_location_id && [dayName, "Any"].includes(assignment.assigned_day);
+      return scope === "weekday" && assignment.duty_location_id === locationId && [dayName, "Any"].includes(assignment.assigned_day);
+    })
+    .filter(assignment => {
+      if (seen.has(assignment.prefect.id)) return false;
+      seen.add(assignment.prefect.id);
+      return true;
+    })
+    .sort((a, b) => `${a.prefect.current_class || ""} ${a.prefect.first_name || ""}`.localeCompare(`${b.prefect.current_class || ""} ${b.prefect.first_name || ""}`));
 }
 function renderAttendance(assignments, meta) {
   const area = $("#attendance-area");
   area.classList.remove("hidden");
   area.onclick = null;
   if (!assignments.length) {
-    area.innerHTML = '<div class="empty">No prefects match this duty selection. Check approvals, account status, duty location, and weekday.</div>';
+    area.innerHTML = '<div class="empty">No prefects are assigned to this duty for the selected date.</div>';
     return;
   }
   area.dataset.meta = JSON.stringify(meta);
-  area.innerHTML = `<h2>Attendance list</h2><div class="actions"><button class="btn secondary" data-all="present">Mark All Present</button><button class="btn ghost" data-all="absent">Mark All Absent</button><button class="btn ghost" data-reset>Reset</button></div><div class="table-wrap"><table><thead><tr><th>Prefect</th><th>Class</th><th>Duty</th><th>Assignment</th><th>Final status</th><th>Note</th></tr></thead><tbody>${assignments.map((a, i) => `<tr data-prefect="${a.prefect.id}"><td>${escapeHtml(a.prefect.first_name)}</td><td>${escapeHtml(a.prefect.current_class)}</td><td>${escapeHtml(a.duty_type.name)} / ${escapeHtml(formatLocationName(a.duty_location))}</td><td>${escapeHtml(isFloorDuty(a.duty_type.name) ? "Permanent floor assignment" : formatAssignmentDay(a))}</td><td><div class="status-pills">${["present", "absent", "late", "excused"].map(s => `<label><input type="radio" name="status-${i}" value="${s}" required><span>${s}</span></label>`).join("")}</div></td><td><input data-note maxlength="500" aria-label="Attendance note"></td></tr>`).join("")}</tbody></table></div><button class="btn" data-submit-attendance style="margin-top:18px">Submit Attendance</button>`;
+  area.innerHTML = `<h2>Attendance list</h2><p class="lede">${escapeHtml(meta.weekday ? `Duty day: ${meta.weekday}` : "")}</p><div class="actions"><button class="btn secondary" data-all="present">Mark All Present</button><button class="btn ghost" data-all="absent">Mark All Absent</button><button class="btn ghost" data-reset>Reset</button></div><div class="table-wrap"><table><thead><tr><th>Prefect</th><th>Class</th><th>Duty</th><th>Assignment</th><th>Final status</th><th>Note</th></tr></thead><tbody>${assignments.map((a, i) => `<tr data-prefect="${a.prefect.id}"><td>${escapeHtml(a.prefect.first_name || "Unnamed prefect")}</td><td>${escapeHtml(a.prefect.current_class || "-")}</td><td>${escapeHtml(a.duty_type?.name || meta.duty_type)} / ${escapeHtml(formatLocationName(a.duty_location))}</td><td>${escapeHtml(isFloorDuty(a.duty_type?.name || meta.duty_type) ? "Permanent floor assignment" : formatAssignmentDay(a))}</td><td><div class="status-pills">${["present", "absent", "late", "excused"].map(s => `<label><input type="radio" name="status-${i}" value="${s}" required><span>${s}</span></label>`).join("")}</div></td><td><input data-note maxlength="500" aria-label="Attendance note"></td></tr>`).join("")}</tbody></table></div><button class="btn" data-submit-attendance style="margin-top:18px">Submit Attendance</button>`;
   area.onclick = attendanceAction;
 }
 function attendanceAction(e) {
@@ -685,7 +1045,7 @@ function confirmAttendance() {
   const counts = Object.fromEntries(["present", "absent", "late", "excused"].map(status => [status, records.filter(record => record.status === status).length]));
   const back = document.createElement("div");
   back.className = "modal-backdrop";
-  back.innerHTML = `<section class="card modal"><h2>Confirm attendance</h2><p><strong>${escapeHtml(meta.duty_type)}</strong> | ${escapeHtml(meta.duty_location)} | ${formatDate(meta.date)}</p><div class="grid cards">${Object.entries(counts).map(([key, value]) => `<div class="stat"><strong>${value}</strong><span>${key}</span></div>`).join("")}</div><div class="actions"><button class="btn" data-confirm>Confirm and submit</button><button class="btn ghost" data-cancel>Go back</button></div></section>`;
+  back.innerHTML = `<section class="card modal"><h2>Confirm attendance</h2><p><strong>${escapeHtml(meta.duty_type)}</strong> | ${escapeHtml(meta.duty_location)} | ${formatDate(meta.date)}${meta.weekday ? ` | ${escapeHtml(meta.weekday)}` : ""}</p><div class="grid cards">${Object.entries(counts).map(([key, value]) => `<div class="stat"><strong>${value}</strong><span>${key}</span></div>`).join("")}</div><div class="actions"><button class="btn" data-confirm>Confirm and submit</button><button class="btn ghost" data-cancel>Go back</button></div></section>`;
   document.body.append(back);
   $("[data-cancel]", back).onclick = () => back.remove();
   $("[data-confirm]", back).onclick = () => submitAttendance(meta, records, back);
@@ -695,22 +1055,31 @@ async function submitAttendance(meta, records, modal) {
   setBusy(btn, true, "Submitting...");
   let sessionId = null;
   try {
-    const { data, error } = await requireClient().from("attendance_sessions").insert({ attendance_date: meta.date, duty_type_id: meta.duty_type_id, duty_location_id: meta.duty_location_id || null, coordinator_profile_id: profile.id, session_status: "submitted", review_status: "recorded" }).select("id").single();
-    if (error) throw error;
-    sessionId = data.id;
-    const { error: recordError } = await requireClient().from("attendance_records").insert(records.map(record => ({ ...record, attendance_session_id: sessionId, session_id: sessionId, marked_by: profile.id })));
-    if (recordError) throw recordError;
+    const schoolDay = localSchoolDay(meta.date);
+    if (!schoolDay.isValid || schoolDay.isWeekend) throw new Error("School duty attendance can only be marked from Monday to Friday.");
+    const resolvedSelection = await resolveAttendanceSessionSelection({
+      dutyTypeId: meta.duty_type_id,
+      dutyTypeName: meta.duty_type,
+      dutyLocationId: meta.duty_location_id,
+    });
+    const session = await createAttendanceSessionRecord({ attendance_date: meta.date, duty_type_id: resolvedSelection.duty_type_id, duty_location_id: resolvedSelection.duty_location_id, coordinator_profile_id: profile.id });
+    sessionId = session.id;
+    await insertAttendanceRecordRows(records, sessionId);
     modal.remove();
     $("#attendance-area").innerHTML = '<div class="empty"><div class="success-check" aria-hidden="true">&#10003;</div><h2>Attendance submitted successfully.</h2><p>The statuses are now official in Supabase and visible on teacher/admin dashboards and reports.</p><div class="actions" style="justify-content:center"><a class="btn" href="coordinator-sessions.html">View my sessions</a><a class="btn ghost" href="coordinator-mark-attendance.html">Mark another session</a></div></div>';
     toast("Official attendance saved.");
   } catch (err) {
-    if (sessionId) await requireClient().from("attendance_sessions").delete().eq("id", sessionId);
+    if (sessionId) {
+      try {
+        await requireClient().from("attendance_sessions").delete().eq("id", sessionId);
+      } catch {}
+    }
     toast(errorMessage(err), "error");
     setBusy(btn, false);
   }
 }
 async function coordinatorSessions() {
-  const { data: sessions, error } = await requireClient().from("attendance_sessions").select("*,duty_type:duty_types(name),duty_location:duty_locations(name,group_name),attendance_records(status)").eq("coordinator_profile_id", profile.id).order("attendance_date", { ascending: false }).limit(500);
+  const { data: sessions, error } = await requireClient().from("attendance_sessions").select("*,duty_type:duty_types(name),duty_location:duty_locations(name,group_name),attendance_records!attendance_records_attendance_session_id_fkey(status)").eq("coordinator_profile_id", profile.id).order("attendance_date", { ascending: false }).limit(500);
   if (error) throw error;
   const unique = selector => [...new Set(sessions.map(selector).filter(Boolean))].sort();
   const locationOptions = unique(row => formatLocationName(row.duty_location)).map(value => `<option value="${escapeHtml(value)}">${escapeHtml(value)}</option>`).join("");
@@ -727,14 +1096,51 @@ async function coordinatorSessions() {
   $("#coordinator-session-filter").addEventListener("input", render);
 }
 
+function todayAttendanceChart(statuses) {
+  const ordered = [
+    ["present", "Present"],
+    ["absent", "Absent"],
+    ["late", "Late"],
+    ["excused", "Excused"],
+  ];
+  const total = statuses.length;
+  const counts = Object.fromEntries(ordered.map(([key]) => [key, statuses.filter(record => record.status === key).length]));
+  const radius = 42;
+  const circumference = 2 * Math.PI * radius;
+  let offset = 0;
+  const rings = ordered.map(([key]) => {
+    const value = counts[key];
+    if (!value) return "";
+    const length = value / Math.max(total, 1) * circumference;
+    const markup = `<circle class="attendance-ring ${key}" cx="50" cy="50" r="${radius}" pathLength="${circumference}" stroke-dasharray="${length} ${circumference - length}" stroke-dashoffset="${-offset}"></circle>`;
+    offset += length;
+    return markup;
+  }).join("");
+  return `
+    <section class="card today-attendance-card section-gap">
+      <div>
+        <p class="eyebrow">Today's Attendance</p>
+        <h2>Official Status Split</h2>
+        <p class="lede">Counts are taken from coordinator-submitted records dated ${formatDate(todayISO())}.</p>
+        <div class="attendance-legend">
+          ${ordered.map(([key, label]) => `<span><i class="${key}"></i>${label}: <strong>${counts[key]}</strong></span>`).join("")}
+        </div>
+      </div>
+      <div class="attendance-chart" aria-label="Today's attendance chart">
+        ${total ? `<svg viewBox="0 0 100 100" role="img" aria-label="${total} attendance records today"><circle class="attendance-ring-base" cx="50" cy="50" r="${radius}"></circle>${rings}</svg><strong>${total}</strong><span>records</span>` : `<div class="attendance-empty">No records<br>today</div>`}
+      </div>
+    </section>
+  `;
+}
+
 async function teacherDashboardFull() {
   const today = todayISO();
   const [total, active, pending, { data: todaySessions, error: te }, { data: absent, error: ae }, { data: recent, error: re }, { data: pendingAssignments, error: pe }] = await Promise.all([
     count("profiles", q => q.eq("role", "prefect")),
     count("profiles", q => q.eq("role", "prefect").eq("account_status", "active")),
     count("profiles", q => q.eq("role", "prefect").eq("account_status", "pending")),
-    requireClient().from("attendance_sessions").select("id,review_status,attendance_records(status)").eq("attendance_date", today),
-    requireClient().from("attendance_records").select("prefect_profile_id,status,attendance_session:attendance_sessions(attendance_date,duty_type:duty_types(name),duty_location:duty_locations(name,group_name)),prefect:profiles!prefect_profile_id(first_name,current_class)").eq("status", "absent").order("created_at", { ascending: false }),
+    requireClient().from("attendance_sessions").select("id,review_status,attendance_records!attendance_records_attendance_session_id_fkey(status)").eq("attendance_date", today),
+    requireClient().from("attendance_records").select("prefect_profile_id,status,attendance_session:attendance_sessions!attendance_records_attendance_session_id_fkey(attendance_date,duty_type:duty_types(name),duty_location:duty_locations(name,group_name)),prefect:profiles!prefect_profile_id(first_name,current_class)").eq("status", "absent").order("created_at", { ascending: false }),
     requireClient().from("attendance_sessions").select("*,duty_type:duty_types(name),duty_location:duty_locations(name,group_name),coordinator:profiles!coordinator_profile_id(first_name)").order("created_at", { ascending: false }).limit(6),
     requireClient().from("prefect_duty_assignments").select("id,assigned_day,prefect:profiles!prefect_profile_id(first_name),duty_type:duty_types(name),duty_location:duty_locations(name,group_name)").eq("assignment_status", "pending").order("created_at", { ascending: false }).limit(6),
   ]);
@@ -751,14 +1157,14 @@ async function teacherDashboardFull() {
     groups.set(record.prefect_profile_id, grouped);
   });
   const top = [...groups.values()].sort((a, b) => b.count - a.count).slice(0, 4);
-  layout(`<div class="grid cards">${[[total, "Registered prefects"], [active, "Active prefects"], [pending, "Pending accounts"], [statusCount("present"), "Present today"], [statusCount("absent"), "Absent today"], [statusCount("late"), "Late today"], [statusCount("excused"), "Excused today"], [todaySessions.length, "Official sessions today"], [todaySessions.filter(s => sessionStateClass(s.review_status) === "corrected").length, "Corrected today"]].map(([value, label]) => `<article class="card stat"><strong>${value}</strong><span>${label}</span></article>`).join("")}</div><section class="card" style="margin-top:18px"><h2>Top 4 Prefects Missing Duties</h2><div class="table-wrap"><table><thead><tr><th>Rank</th><th>First name</th><th>Class</th><th>Absences</th><th>Last missed</th><th>Main missed duty</th></tr></thead><tbody>${rowsOrEmpty(top.map((record, index) => `<tr><td>${index + 1}</td><td>${escapeHtml(record.prefect?.first_name)}</td><td>${escapeHtml(record.prefect?.current_class)}</td><td>${record.count}</td><td>${formatDate(record.attendance_session?.attendance_date)}</td><td>${escapeHtml(Object.entries(record.duties).sort((a, b) => b[1] - a[1])[0]?.[0] || "-")}</td></tr>`), 6)}</tbody></table></div></section><div class="grid two" style="margin-top:18px"><section class="card"><h2>Recent sessions</h2><div class="table-wrap"><table><thead><tr><th>Date</th><th>Duty</th><th>State</th></tr></thead><tbody>${rowsOrEmpty(recent.map(session => `<tr><td>${formatDate(session.attendance_date)}</td><td>${escapeHtml(session.duty_type?.name)} / ${escapeHtml(formatLocationName(session.duty_location))}</td><td>${sessionBadge(session.review_status)}</td></tr>`), 3)}</tbody></table></div></section><section class="card"><h2>Pending duty approvals</h2><div class="table-wrap"><table><thead><tr><th>Prefect</th><th>Duty</th><th>Assignment</th></tr></thead><tbody>${rowsOrEmpty(pendingAssignments.map(assignment => `<tr><td>${escapeHtml(assignment.prefect?.first_name)}</td><td>${escapeHtml(assignment.duty_type?.name)} / ${escapeHtml(formatLocationName(assignment.duty_location))}</td><td>${escapeHtml(formatAssignmentDay(assignment))}</td></tr>`), 3)}</tbody></table></div></section></div><section class="card" style="margin-top:18px"><h2>Recent absences</h2><div class="table-wrap"><table><thead><tr><th>Date</th><th>Prefect</th><th>Class</th><th>Duty</th></tr></thead><tbody>${rowsOrEmpty(absent.slice(0, 8).map(record => `<tr><td>${formatDate(record.attendance_session?.attendance_date)}</td><td>${escapeHtml(record.prefect?.first_name)}</td><td>${escapeHtml(record.prefect?.current_class)}</td><td>${escapeHtml(record.attendance_session?.duty_type?.name)} / ${escapeHtml(formatLocationName(record.attendance_session?.duty_location))}</td></tr>`), 4)}</tbody></table></div><div class="actions"><a class="btn" href="teacher-attendance-review.html">Correct attendance</a><a class="btn ghost" href="teacher-prefects.html">Manage prefects</a><a class="btn secondary" href="teacher-reports.html">Open reports</a></div></section>`);
+  layout(`<div class="grid cards">${[[total, "Registered prefects"], [active, "Active prefects"], [pending, "Pending accounts"], [statusCount("present"), "Present today"], [statusCount("absent"), "Absent today"], [statusCount("late"), "Late today"], [statusCount("excused"), "Excused today"], [todaySessions.length, "Official sessions today"], [todaySessions.filter(s => sessionStateClass(s.review_status) === "corrected").length, "Corrected today"]].map(([value, label]) => `<article class="card stat"><strong>${value}</strong><span>${label}</span></article>`).join("")}</div>${todayAttendanceChart(statuses)}<section class="card" style="margin-top:18px"><h2>Top 4 Prefects Missing Duties</h2><div class="table-wrap"><table><thead><tr><th>Rank</th><th>First name</th><th>Class</th><th>Absences</th><th>Last missed</th><th>Main missed duty</th></tr></thead><tbody>${rowsOrEmpty(top.map((record, index) => `<tr><td>${index + 1}</td><td>${escapeHtml(record.prefect?.first_name)}</td><td>${escapeHtml(record.prefect?.current_class)}</td><td>${record.count}</td><td>${formatDate(record.attendance_session?.attendance_date)}</td><td>${escapeHtml(Object.entries(record.duties).sort((a, b) => b[1] - a[1])[0]?.[0] || "-")}</td></tr>`), 6)}</tbody></table></div></section><div class="grid two" style="margin-top:18px"><section class="card"><h2>Recent sessions</h2><div class="table-wrap"><table><thead><tr><th>Date</th><th>Duty</th><th>State</th></tr></thead><tbody>${rowsOrEmpty(recent.map(session => `<tr><td>${formatDate(session.attendance_date)}</td><td>${escapeHtml(session.duty_type?.name)} / ${escapeHtml(formatLocationName(session.duty_location))}</td><td>${sessionBadge(session.review_status)}</td></tr>`), 3)}</tbody></table></div></section><section class="card"><h2>Pending duty approvals</h2><div class="table-wrap"><table><thead><tr><th>Prefect</th><th>Duty</th><th>Assignment</th></tr></thead><tbody>${rowsOrEmpty(pendingAssignments.map(assignment => `<tr><td>${escapeHtml(assignment.prefect?.first_name)}</td><td>${escapeHtml(assignment.duty_type?.name)} / ${escapeHtml(formatLocationName(assignment.duty_location))}</td><td>${escapeHtml(formatAssignmentDay(assignment))}</td></tr>`), 3)}</tbody></table></div></section></div><section class="card" style="margin-top:18px"><h2>Recent absences</h2><div class="table-wrap"><table><thead><tr><th>Date</th><th>Prefect</th><th>Class</th><th>Duty</th></tr></thead><tbody>${rowsOrEmpty(absent.slice(0, 8).map(record => `<tr><td>${formatDate(record.attendance_session?.attendance_date)}</td><td>${escapeHtml(record.prefect?.first_name)}</td><td>${escapeHtml(record.prefect?.current_class)}</td><td>${escapeHtml(record.attendance_session?.duty_type?.name)} / ${escapeHtml(formatLocationName(record.attendance_session?.duty_location))}</td></tr>`), 4)}</tbody></table></div><div class="actions"><a class="btn" href="teacher-attendance-review.html">Correct attendance</a><a class="btn ghost" href="teacher-prefects.html">Manage prefects</a><a class="btn secondary" href="teacher-reports.html">Open reports</a></div></section>`);
 }
 function sessionCardsFull(rows) {
   return rows.length ? rows.map(session => `<article class="card" style="margin-bottom:18px" data-session="${session.id}"><h2>${escapeHtml(session.duty_type?.name)} - ${escapeHtml(formatLocationName(session.duty_location))}</h2><p>${formatDate(session.attendance_date)} | ${escapeHtml(session.coordinator?.first_name || "Unknown coordinator")} | ${sessionBadge(session.review_status)}</p><div class="info-card">Coordinator-marked attendance is already official. Use this page only to correct a status or add teacher notes.</div><div class="table-wrap section-gap-small"><table><thead><tr><th>Prefect</th><th>Class</th><th>Status</th><th>Teacher note</th><th></th></tr></thead><tbody>${(session.attendance_records || []).map(record => `<tr data-record="${record.id}"><td>${escapeHtml(record.prefect?.first_name)}</td><td>${escapeHtml(record.prefect?.current_class)}</td><td><select data-record-status>${["present", "absent", "late", "excused"].map(value => `<option ${value === record.status ? "selected" : ""}>${value}</option>`).join("")}</select></td><td><input data-teacher-note value="${escapeHtml(record.teacher_note || "")}" maxlength="500"></td><td><button class="btn ghost" data-save-record>Save correction</button></td></tr>`).join("")}</tbody></table></div><div class="field" style="margin-top:12px"><label>Session teacher note</label><textarea data-session-note maxlength="1000">${escapeHtml(session.teacher_note || "")}</textarea></div><div class="actions"><button class="btn secondary" data-save-session-note>Save session note</button></div></article>`).join("") : '<section class="card empty">No sessions match the filters.</section>';
 }
 async function attendanceReviewFull() {
   const [types, coordinators] = await Promise.all([getActiveDutyTypes(), getActiveCoordinators()]);
-  layout(`<section class="card"><form id="review-filter" class="form-grid"><div class="field"><label>From</label><input type="date" name="from"></div><div class="field"><label>To</label><input type="date" name="to"></div><div class="field"><label>Duty type</label><select name="duty_type_id"><option value="">All duty types</option>${types.map(type => `<option value="${type.id}">${escapeHtml(type.name)}</option>`).join("")}</select></div><div class="field"><label>Duty location</label><select name="duty_location_id"><option value="">All locations</option></select></div><div class="field"><label>Coordinator</label><select name="coordinator_profile_id"><option value="">All coordinators</option>${coordinators.length ? coordinators.map(coordinator => `<option value="${coordinator.id}">${escapeHtml(coordinator.first_name)}</option>`).join("") : '<option disabled>No coordinators registered yet</option>'}</select></div><div class="field"><label>Record state</label><select name="status"><option value="">All states</option>${sessionStateOptionsMarkup()}</select></div></form></section><section id="session-list" style="margin-top:18px"><section class="card empty">Loading sessions...</section></section>`);
+  layout(`<section class="card"><form id="review-filter" class="form-grid"><div class="field"><label>From</label><input type="date" name="from"></div><div class="field"><label>To</label><input type="date" name="to"></div><div class="field"><label>Duty type</label><select name="duty_type_id"><option value="">All duty types</option>${types.map(type => `<option value="${type.id}">${escapeHtml(type.name)}</option>`).join("")}</select></div><div class="field"><label>Duty location</label><select name="duty_location_id"><option value="">All locations</option></select></div><div class="field"><label>Coordinator</label><select name="coordinator_profile_id"><option value="">All coordinators</option>${coordinators.length ? coordinators.map(coordinator => `<option value="${coordinator.id}">${escapeHtml(coordinator.first_name)}</option>`).join("") : '<option disabled>No coordinators registered yet</option>'}</select></div><div class="field"><label>Record state</label><select name="status"><option value="">All states</option>${sessionStateOptionsMarkup()}</select></div></form></section><section id="session-list" style="margin-top:18px"><section class="card empty">Loading submitted sessions...</section></section>`);
   const form = $("#review-filter");
   const dutySelect = $("[name=duty_type_id]", form);
   const locationSelect = $("[name=duty_location_id]", form);
@@ -824,16 +1230,16 @@ function dutyApprovalRows(rows) {
 }
 async function prefectManagementFull() {
   const [{ data: people, error: pe }, { data: assignments, error: ae }] = await Promise.all([
-    requireClient().from("profiles").select("*").eq("role", "prefect").order("first_name"),
+    requireClient().from("profiles").select("*").in("role", ["prefect", "coordinator"]).order("first_name"),
     requireClient().from("prefect_duty_assignments").select("*,prefect:profiles!prefect_profile_id(first_name),duty_type:duty_types(name),duty_location:duty_locations(name,group_name)").order("created_at", { ascending: false }),
   ]);
   if (pe || ae) throw pe || ae;
   const classes = [...new Set(people.map(p => p.current_class).filter(Boolean))].sort();
-  layout(`<section class="card"><form id="prefect-filter" class="form-grid"><div class="field"><label>Search first name</label><input name="search"></div><div class="field"><label>Current class</label><select name="class"><option value="">All classes</option>${classes.map(value => `<option>${escapeHtml(value)}</option>`).join("")}</select></div><div class="field"><label>Account status</label><select name="status"><option value="">All statuses</option>${["pending", "active", "rejected", "inactive"].map(value => `<option>${value}</option>`).join("")}</select></div></form><div class="table-wrap" style="margin-top:16px"><table><thead><tr><th>Name</th><th>Class</th><th>Phone</th><th>Status</th><th>Selected duties</th><th>Actions</th></tr></thead><tbody id="prefect-list"></tbody></table></div></section><section class="card" style="margin-top:18px"><h2>Duty assignment approvals</h2><div class="table-wrap"><table><thead><tr><th>Prefect</th><th>Duty</th><th>Location</th><th>Assignment</th><th>Status</th><th>Actions</th></tr></thead><tbody id="duty-approvals">${dutyApprovalRows(assignments)}</tbody></table></div></section>`);
+  layout(`<section class="card"><form id="prefect-filter" class="form-grid"><div class="field"><label>Search first name</label><input name="search"></div><div class="field"><label>Current class</label><select name="class"><option value="">All classes</option>${classes.map(value => `<option>${escapeHtml(value)}</option>`).join("")}</select></div><div class="field"><label>Account status</label><select name="status"><option value="">All statuses</option>${["pending", "active", "rejected", "inactive"].map(value => `<option>${value}</option>`).join("")}</select></div></form><div class="table-wrap" style="margin-top:16px"><table><thead><tr><th>Name</th><th>Class</th><th>Phone</th><th>Role / Status</th><th>Selected duties</th><th>Actions</th></tr></thead><tbody id="prefect-list"></tbody></table></div></section><section class="card" style="margin-top:18px"><h2>Duty assignment approvals</h2><div class="table-wrap"><table><thead><tr><th>Prefect</th><th>Duty</th><th>Location</th><th>Assignment</th><th>Status</th><th>Actions</th></tr></thead><tbody id="duty-approvals">${dutyApprovalRows(assignments)}</tbody></table></div></section>`);
   const render = () => {
     const values = new FormData($("#prefect-filter"));
     const search = String(values.get("search")).toLowerCase();
-    $("#prefect-list").innerHTML = rowsOrEmpty(people.filter(p => p.first_name.toLowerCase().includes(search) && (!values.get("class") || p.current_class === values.get("class")) && (!values.get("status") || p.account_status === values.get("status"))).map(p => `<tr data-id="${p.id}"><td>${escapeHtml(p.first_name)}</td><td>${escapeHtml(p.current_class)}</td><td>${escapeHtml(p.phone)}</td><td>${badge(p.account_status)}</td><td>${assignments.filter(a => a.prefect_profile_id === p.id).map(a => `${escapeHtml(a.duty_type?.name)} / ${escapeHtml(formatLocationName(a.duty_location))} (${escapeHtml(formatAssignmentDay(a))})`).join("<br>") || "None"}</td><td class="actions"><button class="btn" data-account="active">Activate</button><button class="btn danger" data-account="rejected">Reject</button><button class="btn ghost" data-account="inactive">Deactivate</button></td></tr>`), 6);
+    $("#prefect-list").innerHTML = rowsOrEmpty(people.filter(p => p.first_name.toLowerCase().includes(search) && (!values.get("class") || p.current_class === values.get("class")) && (!values.get("status") || p.account_status === values.get("status"))).map(p => `<tr data-id="${p.id}"><td>${escapeHtml(p.first_name)}</td><td>${escapeHtml(p.current_class)}</td><td>${escapeHtml(p.phone)}</td><td><div class="badge-row">${renderRoleBadge(p.role)} ${badge(p.account_status)}</div></td><td>${assignments.filter(a => a.prefect_profile_id === p.id).map(a => `${escapeHtml(a.duty_type?.name)} / ${escapeHtml(formatLocationName(a.duty_location))} (${escapeHtml(formatAssignmentDay(a))})`).join("<br>") || "None"}</td><td class="actions"><button class="btn" data-account="active">Activate</button><button class="btn danger" data-account="rejected">Reject</button><button class="btn ghost" data-account="inactive">Deactivate</button></td></tr>`), 6);
   };
   render();
   $("#prefect-filter").addEventListener("input", render);
@@ -846,7 +1252,7 @@ async function managePrefect(e) {
   const { error } = await requireClient().from("profiles").update({ account_status: btn.dataset.account }).eq("id", btn.closest("tr").dataset.id);
   if (error) toast(errorMessage(error), "error");
   else {
-    toast("Prefect account updated.");
+    toast("Duty-performing account updated.");
     location.reload();
   }
 }
@@ -862,7 +1268,7 @@ async function manageAssignment(e) {
 }
 async function reportsFull() {
   const [{ data: records, error }, types, coordinators] = await Promise.all([
-    requireClient().from("attendance_records").select("status,note,teacher_note,prefect:profiles!prefect_profile_id(first_name,current_class),attendance_session:attendance_sessions(attendance_date,duty_type_id,duty_location_id,duty_type:duty_types(name),duty_location:duty_locations(name,group_name),coordinator_profile_id,coordinator:profiles!coordinator_profile_id(first_name))").order("created_at", { ascending: false }).limit(5000),
+    requireClient().from("attendance_records").select("status,note,teacher_note,prefect:profiles!prefect_profile_id(first_name,current_class),attendance_session:attendance_sessions!attendance_records_attendance_session_id_fkey(attendance_date,duty_type_id,duty_location_id,duty_type:duty_types(name),duty_location:duty_locations(name,group_name),coordinator_profile_id,coordinator:profiles!coordinator_profile_id(first_name))").order("created_at", { ascending: false }).limit(5000),
     getActiveDutyTypes(),
     getActiveCoordinators(),
   ]);
@@ -950,7 +1356,7 @@ async function adminUsersFull() {
       return (!search || name.includes(search) || email.includes(search)) &&
         (!values.get("role") || person.role === values.get("role")) &&
         (!values.get("status") || person.account_status === values.get("status"));
-    }).map(person => `<tr data-id="${person.id}"><td>${escapeHtml(person.first_name)}</td><td>${escapeHtml(person.email)}</td><td>${escapeHtml(person.current_class || "no class")}</td><td><select data-role-select ${person.id === profile.id ? "disabled" : ""}>${optionMarkup(roleOptions, person.role)}</select></td><td><select data-status-select>${optionMarkup(statusOptions, person.account_status)}</select></td><td><button type="button" class="btn" data-save-user>Save</button></td></tr>`), 6);
+    }).map(person => `<tr data-id="${person.id}"><td>${escapeHtml(person.first_name)}</td><td>${escapeHtml(person.email)}</td><td>${escapeHtml(person.current_class || "no class")}</td><td><div class="user-role-cell">${renderRoleBadge(person.role)}<select data-role-select ${person.id === profile.id ? "disabled" : ""}>${optionMarkup(roleOptions, person.role)}</select></div></td><td><select data-status-select>${optionMarkup(statusOptions, person.account_status)}</select></td><td><button type="button" class="btn" data-save-user>Save</button></td></tr>`), 6);
   };
   render();
   form.addEventListener("input", render);
@@ -1095,12 +1501,19 @@ const controllers = {
   "admin-duty-options": dutyOptionsFull,
   "admin-roster": adminRosterFull,
   "hall-of-fame": () => hallOfFameFull({ profile, currentUser, layout, errorMessage }),
+  "timetable": () => timetableFull({ profile, layout, errorMessage }),
+  "announcements": () => announcementsFull({ profile, currentUser, layout, errorMessage }),
 };
 async function boot() {
   if (page === "login") return initLogin();
   if (page === "signup") return initSignup();
-  drawBackground();
-  if ($("#app")) $("#app").innerHTML = '<div class="page-loader" role="status"><span></span><strong>Loading your portal...</strong></div>';
+  if (page !== "hall-of-fame") drawBackground();
+  if ($("#app")) {
+    $("#app").innerHTML = page === "hall-of-fame"
+      ? '<div class="page-loader hof-page-loader" role="status"><div class="hof-crown-loader" aria-hidden="true"><i data-lucide="crown"></i></div><strong>Opening the Wall of Honor</strong><small>Royal Institute Prefects Guild</small></div>'
+      : '<div class="page-loader" role="status"><span></span><strong>Loading portal...</strong></div>';
+    if (page === "hall-of-fame") createIcons({ icons: HALL_LOADER_ICONS });
+  }
   if (!await guard()) return;
   try {
     await controllers[page]();

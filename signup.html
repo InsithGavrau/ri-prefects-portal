@@ -3,30 +3,59 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="Create a pending prefect account for the Royal Institute Prefects Portal.">
+  <meta name="description" content="The Official Royal Institute Prefects Portal">
+  <meta property="og:title" content="Royal Institute Prefects Portal">
+  <meta property="og:description" content="The Official Royal Institute Prefects Portal">
+  <meta property="og:image" content="https://ri-prefects-portal.insithgavrau.workers.dev/assets/ri-prefects-wordmark-20261010.png">
+  <meta property="og:type" content="website">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Royal Institute Prefects Portal">
+  <meta name="twitter:description" content="The Official Royal Institute Prefects Portal">
+  <meta name="twitter:image" content="https://ri-prefects-portal.insithgavrau.workers.dev/assets/ri-prefects-wordmark-20261010.png">
   <link rel="stylesheet" href="css/styles.css">
   <title>Signup | RI Prefect Portal</title>
 </head>
 <body data-page="signup">
   <main class="auth-wrap">
-    <section class="card auth-card">
-      <img class="auth-logo" src="assets/rilogo.png" alt="Royal Institute logo">
-      <h1>Create Prefect Account</h1>
-      <p class="lede">The light of Learning</p>
-      <div data-setup></div>
-      <div id="signup-status"></div>
-      <form id="signup-form" class="form-grid">
-        <div class="field"><label for="first_name">First name</label><input id="first_name" name="first_name" required maxlength="80"></div>
-        <div class="field"><label for="email">Email</label><input id="email" name="email" type="email" autocomplete="email" required></div>
-        <div class="field"><label for="phone">Telephone number</label><input id="phone" name="phone" type="tel" autocomplete="tel" required maxlength="30"></div>
-        <div class="field"><label for="current_class">Current class</label><input id="current_class" name="current_class" required maxlength="40"></div>
-        <div class="field"><label for="password">Password</label><input id="password" name="password" type="password" autocomplete="new-password" minlength="6" required></div>
-        <div class="field"><label for="confirm_password">Confirm password</label><input id="confirm_password" name="confirm_password" type="password" autocomplete="new-password" minlength="6" required></div>
-        <div class="field full"><button class="btn" type="submit">Create account</button></div>
-      </form>
+    <section class="auth-shell signup-shell">
+      <section class="auth-card">
+        <div class="auth-brand-lockup">
+          <span class="portal-wordmark"><img src="/assets/ri-prefects-wordmark-20261010.png" alt="RI Prefects Portal" width="2172" height="724" decoding="async"></span>
+        </div>
+        <div class="auth-heading">
+          <p class="eyebrow">Prefect registration</p>
+          <h1>Create your account</h1>
+          <p class="lede">Join the Royal Institute prefect community.</p>
+        </div>
+        <div data-setup></div>
+        <div id="signup-status"></div>
+        <form id="signup-form" class="form-grid">
+          <div class="auth-section-label full"><span>01</span><strong>Your details</strong></div>
+          <div class="field"><label for="first_name">First name</label><input id="first_name" name="first_name" autocomplete="given-name" placeholder="Your first name" required maxlength="80"></div>
+          <div class="field"><label for="email">Email address</label><input id="email" name="email" type="email" autocomplete="email" placeholder="name@royalinstitute.org" required></div>
+          <div class="field"><label for="phone">Phone number</label><input id="phone" name="phone" type="tel" inputmode="tel" autocomplete="tel" placeholder="07X XXX XXXX" required maxlength="30"></div>
+          <div class="field"><label for="current_class">Current class</label><input id="current_class" name="current_class" autocomplete="organization-title" placeholder="Example: 11A" required maxlength="40"></div>
+          <div class="auth-section-label full"><span>02</span><strong>Account security</strong></div>
+          <div class="field"><label for="password">Password</label><div class="auth-input"><input id="password" name="password" type="password" autocomplete="new-password" placeholder="Create a password" minlength="6" aria-describedby="password-strength" required><button class="password-toggle" type="button" data-password-toggle="password" aria-label="Show password" title="Show password"><i data-lucide="eye" aria-hidden="true"></i></button></div><div class="password-meter" id="password-strength" data-password-meter data-strength="empty" aria-live="polite"><span class="password-meter-track"><span></span></span><small>Use at least 6 characters.</small></div></div>
+          <div class="field"><label for="confirm_password">Confirm password</label><div class="auth-input"><input id="confirm_password" name="confirm_password" type="password" autocomplete="new-password" placeholder="Repeat your password" minlength="6" aria-describedby="password-match" required><button class="password-toggle" type="button" data-password-toggle="confirm_password" aria-label="Show password" title="Show password"><i data-lucide="eye" aria-hidden="true"></i></button></div><small class="password-match" id="password-match" data-password-match aria-live="polite"></small></div>
+          <div class="field full">
+            <div class="auth-form-actions">
+              <button class="btn" type="submit"><span data-button-label>Create account</span><i data-lucide="arrow-right" aria-hidden="true"></i></button>
+              <a class="btn secondary auth-create-btn" href="login.html"><span>Back to sign in</span><i data-lucide="log-in" aria-hidden="true"></i></a>
+            </div>
+          </div>
+        </form>
+      </section>
+      <aside class="auth-visual" role="img" aria-label="Royal Institute prefect community">
+        <div class="auth-photo-topline"><i data-lucide="shield-check" aria-hidden="true"></i><span>Official Prefects Portal</span></div>
+        <div class="auth-photo-copy">
+          <p>Royal Institute</p>
+          <h2>The Light of Learning</h2>
+          <blockquote>Leadership is service made visible.</blockquote>
+        </div>
+      </aside>
     </section>
-    <p class="auth-links">Already registered? <a href="login.html">Sign in</a></p>
-    <footer class="portal-footer auth-footer">System developed by Insith Liyana Arachchi | 2026 Headboard <span>|</span> <a href="mailto:insith6969@gmail.com">Technical Issues</a> <span>|</span> <a href="PASTE_INSITH_LINKEDIN_URL_HERE">LinkedIn</a></footer>
+    <footer class="portal-footer auth-footer">System developed by Insith Liyana Arachchi and Diyon Liyana Arachchi | 2026 Headboard <span>|</span> <a href="mailto:insith6969@gmail.com">Technical Issues</a> <span>|</span> <a href="https://www.linkedin.com/in/insith101" target="_blank" rel="noopener">LinkedIn</a></footer>
   </main>
   <script type="module" src="js/app.js"></script>
 </body>

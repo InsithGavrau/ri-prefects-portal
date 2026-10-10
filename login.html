@@ -3,26 +3,54 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="Sign in to the Royal Institute Prefects Portal.">
+  <meta name="description" content="The Official Royal Institute Prefects Portal">
+  <meta property="og:title" content="Royal Institute Prefects Portal">
+  <meta property="og:description" content="The Official Royal Institute Prefects Portal">
+  <meta property="og:image" content="https://ri-prefects-portal.insithgavrau.workers.dev/assets/ri-prefects-wordmark-20261010.png">
+  <meta property="og:type" content="website">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Royal Institute Prefects Portal">
+  <meta name="twitter:description" content="The Official Royal Institute Prefects Portal">
+  <meta name="twitter:image" content="https://ri-prefects-portal.insithgavrau.workers.dev/assets/ri-prefects-wordmark-20261010.png">
   <link rel="stylesheet" href="css/styles.css">
   <title>Login | RI Prefect Portal</title>
 </head>
 <body data-page="login">
   <main class="auth-wrap">
-    <section class="card auth-card">
-      <img class="auth-logo" src="assets/rilogo.png" alt="Royal Institute logo">
-      <p class="eyebrow">Secure access</p>
-      <h1>Royal Institute Prefects Portal</h1>
-      <p class="lede">The light of Learning</p>
-      <div data-setup></div>
-      <form id="login-form">
-        <div class="field"><label for="email">Email</label><input id="email" name="email" type="email" autocomplete="email" required></div>
-        <div class="field"><label for="password">Password</label><input id="password" name="password" type="password" autocomplete="current-password" minlength="6" required></div>
-        <button class="btn" type="submit">Sign in</button>
-      </form>
+    <section class="auth-shell">
+      <section class="auth-card">
+        <div class="auth-brand-lockup">
+          <span class="portal-wordmark"><img src="/assets/ri-prefects-wordmark-20261010.png" alt="RI Prefects Portal" width="2172" height="724" decoding="async"></span>
+        </div>
+        <div class="auth-heading">
+          <p class="eyebrow">Secure access</p>
+          <h1>Welcome back</h1>
+          <p class="lede">Sign in to continue to your prefect portal.</p>
+        </div>
+        <div data-setup></div>
+        <form id="login-form">
+          <div class="field"><label for="email">Email address</label><input id="email" name="email" type="email" autocomplete="email" placeholder="name@royalinstitute.org" required></div>
+          <div class="field"><label for="password">Password</label><div class="auth-input"><input id="password" name="password" type="password" autocomplete="current-password" placeholder="Enter your password" minlength="6" required><button class="password-toggle" type="button" data-password-toggle="password" aria-label="Show password" title="Show password"><i data-lucide="eye" aria-hidden="true"></i></button></div></div>
+          <div class="auth-options">
+            <label class="auth-check"><input type="checkbox" name="remember_email"><span>Remember email</span></label>
+            <a href="mailto:insith6969@gmail.com?subject=Prefects%20Portal%20sign-in%20support">Sign-in support</a>
+          </div>
+          <div class="auth-form-actions">
+            <button class="btn" type="submit"><span data-button-label>Sign in</span><i data-lucide="arrow-right" aria-hidden="true"></i></button>
+            <a class="btn secondary auth-create-btn" href="signup.html"><span>Create account</span><i data-lucide="user-plus" aria-hidden="true"></i></a>
+          </div>
+        </form>
+      </section>
+      <aside class="auth-visual" role="img" aria-label="Royal Institute prefect community">
+        <div class="auth-photo-topline"><i data-lucide="shield-check" aria-hidden="true"></i><span>Official Prefects Portal</span></div>
+        <div class="auth-photo-copy">
+          <p>Royal Institute</p>
+          <h2>The Light of Learning</h2>
+          <blockquote>Leadership is service made visible.</blockquote>
+        </div>
+      </aside>
     </section>
-    <p class="auth-links">New prefect? <a href="signup.html">Create an account</a></p>
-    <footer class="portal-footer auth-footer">System developed by Insith Liyana Arachchi | 2026 Headboard <span>|</span> <a href="mailto:insith6969@gmail.com">Technical Issues</a> <span>|</span> <a href="PASTE_INSITH_LINKEDIN_URL_HERE">LinkedIn</a></footer>
+    <footer class="portal-footer auth-footer">System developed by Insith Liyana Arachchi and Diyon Liyana Arachchi | 2026 Headboard <span>|</span> <a href="mailto:insith6969@gmail.com">Technical Issues</a> <span>|</span> <a href="https://www.linkedin.com/in/insith101" target="_blank" rel="noopener">LinkedIn</a></footer>
   </main>
   <script type="module" src="js/app.js"></script>
 </body>

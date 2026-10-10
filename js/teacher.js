@@ -11,5 +11,5 @@ export const teacherCapabilities = [
   "correct official attendance records when needed",
   "approve prefect accounts and duty assignments",
   "filter reports and export CSV",
-  "review Hall of Fame requests",
+  "review Wall of Honor requests",
 ];

@@ -11,5 +11,5 @@ export const prefectCapabilities = [
   "create pending duty selections",
   "remove pending duty selections",
   "view own attendance history",
-  "submit Hall of Fame consideration requests",
+  "submit Wall of Honor consideration requests",
 ];

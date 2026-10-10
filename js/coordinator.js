@@ -11,5 +11,5 @@ export const coordinatorCapabilities = [
   "mark weekday attendance sessions",
   "submit official attendance records directly",
   "view own submitted session archive",
-  "submit Hall of Fame consideration requests",
+  "submit Wall of Honor consideration requests",
 ];

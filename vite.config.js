@@ -7,7 +7,7 @@ const pages = [
   "coordinator-dashboard", "coordinator-mark-attendance", "coordinator-sessions",
   "teacher-dashboard", "teacher-attendance-review", "teacher-prefects", "teacher-reports",
   "admin-dashboard", "admin-users", "admin-duty-options", "admin-roster",
-  "hall-of-fame",
+  "hall-of-fame", "timetable", "announcements",
 ];
 
 export default defineConfig({
